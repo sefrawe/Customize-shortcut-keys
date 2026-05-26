@@ -1,0 +1,16 @@
+# 核心功能：全局快捷键监听+键盘鼠标模拟
+pynput==1.7.7
+
+# GUI界面：现代美观的tkinter增强版
+customtkinter==5.2.2
+
+# 系统托盘
+pystray==0.19.5
+Pillow==10.3.0  # pystray依赖的图像处理库
+
+# Windows系统控制
+pywin32==306  # 封装所有Windows原生API
+pycaw==20240210  # Windows音量控制专用库
+
+# 打包工具：生成独立exe文件
+pyinstaller==6.8.0
