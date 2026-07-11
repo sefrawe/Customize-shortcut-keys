@@ -1,3 +1,6 @@
+'''
+入口文件，启动应用程序
+'''
 import customtkinter as ctk
 from gui.main_window import MainWindow
 
