@@ -49,4 +49,4 @@ config/*.json
 项目记事本*.md!/test.py
 /项目记事本markdown.md
 /test.py
-/gui/SettingsWindow.py
+/gui/SettingsPage.py

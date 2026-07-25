@@ -1,8 +1,14 @@
 '''
 主窗口
 '''
+from hmac import new
+
 import customtkinter as ctk
 import json
+
+from gui.SettingsPage import SettingsPage
+from gui.HomePages import HomePage
+
 # from gui.SettingsWindow import SettingsWindow
 
 # 打开本地全局设置json文件
@@ -48,17 +54,17 @@ class MainWindow(ctk.CTk):
 
         self.grid_columnconfigure(1, weight=1)  # 右侧内容区可伸缩
 
-        # 导航栏内部布局：垂直排列按钮
-        nav_items = ["首页", "功能1", "功能2", "设置"]
-        self.nav_buttons = {}  # 存储按钮对象，方便后续高亮
+        # 导航栏内部布局：依次垂直排列按钮
+        navItems = ["首页", "功能1", "功能2", "设置"]
+        self.navButtons = {}  # 存储按钮对象，方便后续高亮
 
-        for i, item in enumerate(nav_items):
+        for i, item in enumerate(navItems):
             #i,item分别表示索引和导航项名称
             # 创建按钮，绑定切换页面的函数
             btn = ctk.CTkButton(
                 self.nav_frame,
                 text=item,
-                command=lambda name=item: self.show_page(name),
+                command=lambda name=item: self.showPage(name),
                 fg_color="transparent",  # 默认透明背景
                 hover_color="#3a3a3a",  # 悬停时背景色
                 text_color="white" , # 文字颜色
@@ -67,27 +73,34 @@ class MainWindow(ctk.CTk):
 
             )
             btn.grid(row=i, column=0, pady=2, padx=10, sticky="ew")  # 填满宽度,各属性分别表示：row=i表示按钮所在行，column=0表示按钮所在列，pady=10表示上下间距为10像素，padx=20表示左右间距为20像素，sticky="ew"表示按钮在水平方向上填满整个单元格。
-            self.nav_buttons[item] = btn  # 存储按钮对象
+            self.navButtons[item] = btn  # 存储按钮对象
+
+        # 右侧内容区父容器
+        self.contentFrame = ctk.CTkFrame(self, fg_color="transparent")# 定义内容区框架，设置背景颜色为透明
+        self.contentFrame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)# 将内容区放置在右侧，填充整个高度和宽度，并设置内边距为10像素
+
+        self.pages={}
+        self.pages["首页"] = HomePage(self.contentFrame, fg_color="transparent")
+        # 创建一个首页对象，并存储在self.pages字典中，键为"首页"，值为HomePage对象。第一个参数self.contentFrame表示将页面放置在内容区父容器中，第二个参数fg_color="transparent"表示设置页面背景颜色为透明。
+        self.pages["功能1"] = HomePage(self.contentFrame, fg_color="transparent")#todo 页面还没做，用HomePage占位
+        self.pages["功能2"] = HomePage(self.contentFrame, fg_color="transparent")#todo 页面还没做，用HomePage占位
+        self.pages["设置"]=SettingsPage(self.contentFrame, fg_color="transparent")
+
+        self.showPage("首页")  # 默认显示首页
+
+    # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
+    def showPage(self, name):
+        # 隐藏所有页面。遍历self.pages字典，将所有页面隐藏。grid_forget()方法用于从网格中移除组件，但保留其占用的空间。
+        for pageName, page in self.pages.items():
+            page.grid_forget()
+        # 恢复所有导航按钮的默认样式。遍历self.navButtons字典，将所有按钮的背景颜色恢复为透明。
+        for btnName, btn in self.navButtons.items():
+            btn.configure(fg_color="transparent")
+        # 显示选中的页面。将选中的页面显示在内容区父容器中，并使用grid()方法进行布局。sticky="nsew"表示按钮在水平和垂直方向上填满整个单元格。
+        self.pages[name].grid(row=0, column=0, sticky="nsew")
+        # 高亮当前选中的导航按钮。将选中的导航按钮的背景颜色设置为#3a3a3a。
+        self.navButtons[name].configure(fg_color="#3a3a3a")
 
 
-        # 添加设置按钮
-        # self.button_1 = ctk.CTkButton(self, text="设置", command=self.open_toplevel)
-        # self.button_1.pack(side="top", padx=20, pady=20)
-        # self.toplevel_window = None
 
-        # self._create_widgets()
-    def _create_widgets(self):
-        """创建窗口中的所有组件"""
-        # 先添加一个简单的标签测试
-        welcome_label = ctk.CTkLabel(
-            self,
-            text="欢迎使用自定义快捷键工具",
-            font=("微软雅黑", 24)
-        )
-        welcome_label.pack(pady=50)
 
-    # def open_toplevel(self):
-    #     if self.toplevel_window is None or not self.toplevel_window.winfo_exists():
-    #         self.toplevel_window = SettingsWindow(self)  # create window if its None or destroyed
-    #     else:
-    #         self.toplevel_window.focus()  # if window exists focus it
