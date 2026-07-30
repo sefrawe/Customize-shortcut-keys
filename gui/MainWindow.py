@@ -1,10 +1,11 @@
 '''
 主窗口
 '''
-from hmac import new
 
 import customtkinter as ctk
 import json
+
+from core.configManager import globalSettingspath
 
 from gui.SettingsPage import SettingsPage
 from gui.HomePages import HomePage
@@ -12,10 +13,10 @@ from gui.HomePages import HomePage
 # from gui.SettingsWindow import SettingsWindow
 
 # 打开本地全局设置json文件
-with open("./config/Global Settings.json", "r", encoding="utf-8") as f:
-    global_settings = json.load(f)
+with open(globalSettingspath, "r", encoding="utf-8") as f:
+    globalSettings = json.load(f)
 # 读取外观模式配置
-appearanceMode=global_settings["appearanceMode"]
+appearanceMode=globalSettings["appearanceMode"]
 
 # numberOfNavigationBarSections=4  # 导航栏分为4个部分，分别是首页、功能1、功能2、设置
 
