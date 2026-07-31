@@ -6,14 +6,14 @@ import json
 
 import customtkinter as ctk
 
-from core.configManager import globalSettingspath, configDirectory, createNewShortcutSchemeConfig
+from core.configManager import globalSettingspath, configDirectory, createNewShortcutSchemeConfig, \
+    saveShortcutSchemeConfig
 from gui.HomePages import HomePage
 from gui.NewShortcutSchemePage import NewShortcutSchemePage
 from gui.SettingsPage import SettingsPage
-from utils.shortcutUtils import numberOfFilesInTheFolder, getShortcutSchemes
+from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSchemes
 
-currentNumberOfShortcutKeySchemes =numberOfFilesInTheFolder(configDirectory)
-numberOfNavigationBarItems =currentNumberOfShortcutKeySchemes+2# 2表示除了快捷键方案之外，还有首页和设置两个固定导航项
+
 # print(f"当前快捷键方案数量: {CurrentNumberOfShortcutKeySchemes}")
 # 打开本地全局设置json文件
 with open(globalSettingspath, "r", encoding="utf-8") as f:
@@ -40,6 +40,8 @@ class MainWindow(ctk.CTk):
 
         # 主布局：分为左右两列。使用grid布局管理器，左侧为导航栏，右侧为内容区，index=0表示左侧导航栏，index=1表示右侧内容区
 
+        self.numberOfNavigationBarItems = theNumberOfTargetFilesInTheFolder(configDirectory) + 2# 2表示除了快捷键方案之外，还有首页和设置两个固定导航项
+
         # index的含义：grid布局管理器中，row表示行，column表示列，index表示索引，从0开始计数。row=0表示第一行，column=0表示第一列，row=1表示第二行，column=1表示第二列，以此类推。
 
         self.grid_columnconfigure(0, weight=0)  # 左侧导航栏固定宽度.完整解释：grid_columnconfigure方法用于配置网格列的权重。权重为0表示该列不会随着窗口大小变化而伸缩，而权重为1表示该列会根据窗口大小变化而伸缩。
@@ -54,7 +56,7 @@ class MainWindow(ctk.CTk):
         解决方法： 在 nav_frame 上调用 grid_propagate(False)，阻止子组件反向决定 frame 的尺寸，这样 width=400 才会生效
         '''
         self.nav_frame.grid(row=0, column=0,sticky="ns")# 将导航栏放置在左侧，填充整个高度（sticky="ns"表示上下填充），row=0表示第一行，column=0表示第一列。这句代码的作用是将导航栏放置在主窗口的左侧，并且填充整个高度，使其看起来像一个垂直菜单栏。
-        self.nav_frame.grid_rowconfigure(numberOfNavigationBarItems, weight=1) # 导航栏的第 首页加设置加已有两项快捷键方案加1 行（当前index=4）可以伸缩，从而将按钮推到顶部
+        self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1) # 导航栏的第 首页加设置加已有两项快捷键方案加1 行（当前index=4）可以伸缩，从而将按钮推到顶部
 
         self.grid_columnconfigure(1, weight=1)  # 右侧内容区可伸缩
 
@@ -109,7 +111,7 @@ class MainWindow(ctk.CTk):
             font=("微软雅黑", 16),
             height=40
         )
-        self.addProfileBtn.grid(row=numberOfNavigationBarItems+1, column=0, pady=(10, 20), padx=10, sticky="ew")
+        self.addProfileBtn.grid(row=self.numberOfNavigationBarItems+1, column=0, pady=(10, 20), padx=10, sticky="ew")
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):
@@ -129,22 +131,19 @@ class MainWindow(ctk.CTk):
         newPage = NewShortcutSchemePage(self.contentFrame, fg_color="transparent", schemeName=schemeName)
         self.pages[schemeName] = newPage
 
-
-
-
     def openAddProfileDialog(self):
-        # 核心逻辑是：
-        # 1. 弹窗获取用户输入的方案名
-        # 2. 调用 configManager 添加新方案
-        # 3. 刷新左侧导航栏 (动态增加一个按钮)
         dialog = ctk.CTkInputDialog(text="请输入新的快捷键方案名称:", title="新建方案")
-        newName = dialog.get_input()
-        self.createNewShortcutScheme(newName)
-        pass
+        newName = dialog.get_input()  # ← 只调用一次，存起来
+        if newName is None or newName.strip() == "":  # ← 用变量判断
+            return
+        newConfig = createNewShortcutSchemeConfig(newName)
+        saveShortcutSchemeConfig(newConfig, newName)
+        self.refreshSchemeButtons()
+        self.showPage(newName)
 
 
     def createNavigationBarItemsBasedOnShortcutKeyScheme(self, schemes):
-        """根据快捷键方案列表创建导航栏按钮"""
+        """根据快捷键方案列表创建导航栏按钮和对应页面"""
         schemes = sorted(schemes, key=lambda x: x["name"])  # sorted() 函数用于对可迭代对象进行排序，返回一个新的列表。
         # key 参数指定一个函数，用于从每个元素中提取用于排序的键。
         # 在这里，lambda x: x["name"] 是一个匿名函数，它接受一个字典 x，并返回该字典中 "name" 键对应的值。
@@ -168,11 +167,34 @@ class MainWindow(ctk.CTk):
             # 创建新方案页面
             self.createNewShortcutSchemePage(schemeName)
 
+    def refreshSchemeButtons(self):
+        """刷新方案导航按钮（删除旧的，重新创建）"""
+        # 1. 记录旧的弹簧行
+        oldSpringRow = self.numberOfNavigationBarItems
+        # 2. 删除旧的方案按钮和页面（保留首页、设置）
+        fixedButtons = ["首页", "设置"]
+        keysToDelete = [k for k in list(self.navButtons.keys()) if k not in fixedButtons]
+        #使用列表推导式创建了一个新的列表 keysToDelete，
+        # 其中包含了 self.navButtons 字典中所有键（按钮名称），但排除了固定按钮 "首页" 和 "设置"。
+        # 具体来说，list(self.navButtons.keys()) 会返回 self.navButtons 字典中所有键的列表，
+        # 然后通过 if k not in fixedButtons 条件过滤掉固定按钮，最终得到需要删除的按钮名称列表。
+        for key in keysToDelete:
+            self.navButtons[key].destroy()  # 销毁旧按钮
+            del self.navButtons[key]
+            if key in self.pages:
+                self.pages[key].destroy()  # 销毁旧页面
+                del self.pages[key]
+        # 3. 重置旧弹簧行权重
+        self.nav_frame.grid_rowconfigure(oldSpringRow, weight=0)#grid_rowconfigure方法用于配置网格行的权重。这里将旧弹簧行的权重设置为0，表示该行不会随着窗口大小变化而伸缩，从而避免布局问题。
+        # 4. 重新计算
+        self.numberOfNavigationBarItems = theNumberOfTargetFilesInTheFolder(configDirectory) + 2
+        # 5. 设置新弹簧行
+        self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
+        # 6. 移动"+ 新建"按钮到新位置
+        self.addProfileBtn.grid(row=self.numberOfNavigationBarItems + 1, column=0, pady=(10, 20), padx=10, sticky="ew")
+        # 7. 重新创建方案按钮和页面
+        self.createNavigationBarItemsBasedOnShortcutKeyScheme(getShortcutSchemes(configDirectory))
 
-    def createNewShortcutScheme(self, schemeName):
-        """创建新的快捷键方案"""
-        pass
-# 快捷键方案列表: [{'name': 'testShortcutKeyScheme'}, {'name': 'testShortcutKeyScheme2'}]
 
 
 

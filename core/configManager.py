@@ -2,7 +2,7 @@
 import json
 from pathlib import Path
 
-
+from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder
 
 # Path(__file__)         → core/config_manager.py
 # .resolve()             → 转为绝对路径
@@ -12,7 +12,8 @@ proJectrootDirectory = Path(__file__).resolve().parent.parent
 configDirectory = proJectrootDirectory / "config"
 globalSettingspath = configDirectory / "Global Settings.json"
 
-
+currentNumberOfShortcutKeySchemes = theNumberOfTargetFilesInTheFolder(configDirectory)
+numberOfNavigationBarItems =currentNumberOfShortcutKeySchemes+2# 2表示除了快捷键方案之外，还有首页和设置两个固定导航项
 
 def loadThemeFromConfig():
     with open(globalSettingspath, "r", encoding="utf-8") as f:
@@ -39,5 +40,64 @@ def saveGlobalSettings(settings):
 
 def createNewShortcutSchemeConfig(newName):
     # 主窗口中创建新的快捷键方案的配置
-    pass
+    newConfig = {
+        "settings": {
+            "name": newName,
+            "description": "这是一个新建快捷键方案",
+            "startupEnabled": False,
+            "currentProfileId": currentNumberOfShortcutKeySchemes#从0开始计数，当前快捷键方案的ID为当前已有快捷键方案数量
+        },
+        "profiles": [
+
+        ]
+    }
+    return newConfig
+
+def saveShortcutSchemeConfig(newConfig, newName):
+    newFilePath = configDirectory / f"{newName}.json"
+    with open(newFilePath, "w", encoding="utf-8") as f:
+        json.dump(newConfig, f, ensure_ascii=False, indent=2)
+
+
+    # {
+    #     "settings": {
+    #         "name": "测试快捷键方案",
+    #         "description": "测试快捷键方案",
+    #         "startupEnabled": true,
+    #         "currentProfileId": 1
+    #     },
+    #     "profiles": [
+    #         {
+    #             "id": 1,
+    #             "name": "我的快捷键1",
+    #             "description": "自定义快捷键1",
+    #             "type": "custom",
+    #             "readOnly": false,
+    #             "shortcuts": [
+    #                 {
+    #                     "keyCombination": "ctrl+alt+1",
+    #                     "action": "copyText",
+    #                     "actionParams": {"text": "myemail@example.com"},
+    #                     "enabled": true
+    #                 }
+    #             ]
+    #         },
+    #         {
+    #             "id": 2,
+    #             "name": "我的快捷键2",
+    #             "description": "自定义快捷键2",
+    #             "readOnly": false,
+    #             "type": "custom",
+    #             "shortcuts": [
+    #                 {
+    #                     "keyCombination": "ctrl+alt+2",
+    #                     "action": "copyText",
+    #                     "actionParams": {"text": "myemail2@example.com"},
+    #                     "enabled": true
+    #                 }
+    #             ]
+    #         }
+    #     ]
+    # }
+
 

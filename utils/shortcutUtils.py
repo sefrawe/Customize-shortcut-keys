@@ -4,10 +4,7 @@
 import json
 from pathlib import Path
 
-from core.configManager import configDirectory
-
-
-def numberOfFilesInTheFolder(folderPath):
+def theNumberOfTargetFilesInTheFolder(folderPath):
     """统计文件夹中快捷键方案文件的数量（排除软件配置文件和无法解析的文件）"""
     folder = Path(folderPath)
     if not folder.exists() or not folder.is_dir():
@@ -55,9 +52,3 @@ def getShortcutSchemes(folderPath):
 
 # 快捷键方案文件数量: 2
 # 快捷键方案列表: [{'name': '测试快捷键方案'}, {'name': '测试快捷键方案2'}]
-# if __name__ == "__main__":
-#     # 测试函数
-#     count = numberOfFilesInTheFolder(configDirectory)
-#     print(f"快捷键方案文件数量: {count}")
-#     schemes = getShortcutSchemes(configDirectory)
-#     print(f"快捷键方案列表: {schemes}")
