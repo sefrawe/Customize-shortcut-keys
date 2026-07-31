@@ -2,6 +2,8 @@
 import json
 from pathlib import Path
 
+
+
 # Path(__file__)         → core/config_manager.py
 # .resolve()             → 转为绝对路径
 # .parent                → core/
@@ -9,6 +11,8 @@ from pathlib import Path
 proJectrootDirectory = Path(__file__).resolve().parent.parent
 configDirectory = proJectrootDirectory / "config"
 globalSettingspath = configDirectory / "Global Settings.json"
+
+
 
 def loadThemeFromConfig():
     with open(globalSettingspath, "r", encoding="utf-8") as f:
@@ -32,3 +36,8 @@ def loadGlobalSettings():
 def saveGlobalSettings(settings):
     with open(globalSettingspath, "w", encoding="utf-8") as f:
         json.dump(settings, f, ensure_ascii=False, indent=2)
+
+def createNewShortcutSchemeConfig(newName):
+    # 主窗口中创建新的快捷键方案的配置
+    pass
+
