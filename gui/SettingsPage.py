@@ -40,16 +40,5 @@ class SettingsPage(ctk.CTkFrame):
         # 保存到配置文件
         saveThemeToConfig(choice)
 
-        # # 显示提示信息
-        # if choice!="System":
-        #     self.showNotification(f"主题已切换为: {choice}")
-        # else:
-        #     self.showNotification(f"主题已切换为: 跟随系统")
 
-    # def showNotification(self, param):
-    #     """显示提示信息"""
-    #     notification = ctk.CTkLabel(self, text=param, font=("微软雅黑", 14), text_color="green")
-    #     notification.pack(pady=10)
-    #     # 4秒后自动销毁提示信息
-    #     self.after(4000, notification.destroy)
 
