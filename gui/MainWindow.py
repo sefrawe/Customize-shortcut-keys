@@ -131,9 +131,13 @@ class MainWindow(ctk.CTk):
         self.navButtons[name].configure(fg_color="#3a3a3a")
 
     def createNewShortcutSchemePage(self, schemeName):
-        """在主窗口创建新的快捷键方案的页面"""
-        newPage = NewShortcutSchemePage(self.contentFrame, fg_color="transparent", schemeName=schemeName,
-                                        onRenamed=self.handleSchemeRenamed)
+        newPage = NewShortcutSchemePage(
+            self.contentFrame,
+            fg_color="transparent",
+            schemeName=schemeName,
+            onRenamed=self.handleSchemeRenamed,
+            onStartupChanged=self.handleSchemeStartupChanged,
+        )
         self.pages[schemeName] = newPage
 
     def openAddProfileDialog(self):
@@ -206,3 +210,10 @@ class MainWindow(ctk.CTk):
         """改名成功后由子页面回调：刷新导航栏 + 跳转到新页面"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
         self.showPage(newName)  # 跳转到改名后的页面
+
+    def handleSchemeStartupChanged(self):
+        """某个方案切换了启用状态后，刷新所有方案页面的状态显示"""
+        for name, page in self.pages.items():
+            # 只刷新 NewShortcutSchemePage 类型的页面
+            if isinstance(page, NewShortcutSchemePage):
+                page.refreshStartupDisplay()

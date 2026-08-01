@@ -178,10 +178,29 @@ def changeShortcutSchemeConfig_Description(newDescription="", schemeId=None, nam
 def changeShortcutSchemeConfig_StartupEnabled(name=None, schemeId=None, newStartupEnabled=False):
     # 修改配置文件中的快捷键方案启动启用状态
     if name is not None and schemeId is None:
-        pass
-    if schemeId is not None and name is None:
-        pass
-    pass
+        for file in configDirectory.glob("*.json"):
+            with open(file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("settings", {}).get("name") == name:
+                config["settings"]["startupEnabled"] = newStartupEnabled
+                saveShortcutSchemeConfig(config, name)
+                return
+        raise FileNotFoundError(f"快捷键方案 '{name}' 的配置文件不存在")
+    elif schemeId is not None and name is None:
+        for file in configDirectory.glob("*.json"):
+            with open(file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("settings", {}).get("currentProfileId") == schemeId:
+                config["settings"]["startupEnabled"] = newStartupEnabled
+                saveShortcutSchemeConfig(config, config["settings"]["name"])
+                return
+        raise FileNotFoundError(f"快捷键方案ID '{schemeId}' 的配置文件不存在")
+    else:
+        try:
+            if name is not None and schemeId is not None:
+                raise ValueError("只能指定方案名称或方案ID中的一个，不能同时指定两个")
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))
 
 
 def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
@@ -194,14 +213,6 @@ def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
                 file.unlink()
                 return
         raise FileNotFoundError(f"快捷键方案 '{schemeName}' 的配置文件不存在")
-    # def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
-    #     # 删除快捷键方案的配置文件
-    #     if schemeName is not None and schemeId is None:
-    #         filePath = configDirectory / f"{schemeName}.json"
-    #         if filePath.exists():
-    #             filePath.unlink()  # 删除文件
-    #         else:
-    #             raise FileNotFoundError(f"快捷键方案 '{schemeName}' 的配置文件不存在")
     elif schemeId is not None and schemeName is None:  # ❌ 旧代码：按文件名删除
         for file in configDirectory.glob("*.json"):
             with open(file, "r", encoding="utf-8") as f:

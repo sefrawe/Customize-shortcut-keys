@@ -16,7 +16,7 @@ class SettingsPage(ctk.CTkFrame):
         self.themeSeg = ctk.CTkSegmentedButton(# 创建主题选择分段按钮
             self,
             values=["亮", "暗", "跟随系统"],
-            command=self.change_theme,
+            command=self.changeTheme,
             font=("微软雅黑", 16)
         )
         # 从配置文件读取当前主题并设置默认值
@@ -25,9 +25,9 @@ class SettingsPage(ctk.CTkFrame):
         self.themeSeg.pack(pady=10, padx=20, fill="x")
 
         # 立即应用当前主题
-        self.change_theme(current_theme)
+        self.changeTheme(current_theme)
 
-    def change_theme(self, choice):
+    def changeTheme(self, choice):
         """切换主题并保存配置"""
         # 应用主题
         if choice == "亮":
