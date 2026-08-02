@@ -16,6 +16,13 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         super().__init__(master, **kwargs)
         # 这里写新建的快捷键方案的所有组件和逻辑
         ctk.CTkLabel(self, text="这是新建的快捷键方案").pack(pady=20)
+        
+        
+之前宽度定死是因为mainwindow没有给这个页面设置grid_columnconfigure和grid_rowconfigure，没有权限，导致无法伸缩
+# MainWindow.py
+self.contentFrame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
+self.contentFrame.grid_columnconfigure(0, weight=1)
+self.contentFrame.grid_rowconfigure(0, weight=1)
 '''
 
 import customtkinter as ctk
@@ -34,83 +41,77 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         # 防抖计时器ID
         self._save_after_id = None
 
-        # 创建水平布局的容器
-        headerFrame = ctk.CTkFrame(self,fg_color="transparent")
-        headerFrame.pack(pady=(20,5), fill="x",padx=20)
-        # 标题标签
-        ctk.CTkLabel(headerFrame, text=f"{schemeName}", font=("微软雅黑", 25)).pack(side="left")
-        # # 更名按钮
-        # #启动状态选择分段按钮
-        # 右侧：操作按钮组
-        btnGroup = ctk.CTkFrame(headerFrame, fg_color="transparent")
+        self.grid_columnconfigure(0, weight=1)# 让标题水平可伸缩
+        self.grid_rowconfigure(0,weight=0)# 让标题垂直不可伸缩
+
+        # self.grid_columnconfigure(1, weight=1)# 让内容区水平可伸缩
+        """后一个框架的宽度由第一个框架决定，指定第二个框架的宽度为1，会导致它们均只占页面的一半宽度"""
+        self.grid_rowconfigure(1,weight=0)# 让描述区垂直不可伸缩
+
+        self.grid_rowconfigure(2, weight=1)# 让快捷键列表垂直可伸缩
+
+        #第一个框架用于放置标题和启用状态等
+        self.headFrame = ctk.CTkFrame(self,height=80,fg_color="transparent")
+        self.headFrame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)#sticky="ew"表示水平填充，sticky="nsew"表示水平和垂直都填充
+        # 第二个框架用于放置快捷键方案描述
+        self.descFrame = ctk.CTkFrame(self,height=200,fg_color="transparent")
+        self.descFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
+        #第三个框架用于放置快捷键列表
+        self.shortcutFrame = ctk.CTkFrame(self)
+        self.shortcutFrame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
+
+        ctk.CTkLabel(self.headFrame, text=f"{schemeName}", font=("微软雅黑", 25)).pack(side="left")
+        btnGroup = ctk.CTkFrame(self.headFrame)
         btnGroup.pack(side="right")
         renameButton = ctk.CTkButton(btnGroup, text="重命名", width=80, command=self.changeTheShortcutSchemeName)
-        renameButton.pack(side="left", padx=5)
+        renameButton.pack(side="right", padx=5)
+        #todo 还要有删除与复制（改名但是不删）
         self.selectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
             btnGroup, values=["启用", "禁用"], command=self.changeShortcutSchemeEnabled
         )
         self.selectSegmentedButtonForStartup.pack(side="left", padx=5)
 
-        # 根据“自己是不是当前启用方案”来决定分段按钮显示什么
         try:
             startupSchemeName = getStartupEnabledShortcutScheme(configDirectory)["name"]
         except (KeyError, TypeError):
             startupSchemeName = None
         self.startupStatusLabel = ctk.CTkLabel(
-            self,
+            self.headFrame,
             text=f"当前启用方案: {startupSchemeName}" if startupSchemeName else "当前启用方案: 无",
-            font=("微软雅黑", 14),
-            text_color="gray60",
-            anchor="w"
+            font=("微软雅黑", 16),
+            text_color="green",
+            anchor="w"# 左对齐
         )
-        self.startupStatusLabel.pack(fill="x", padx=20, pady=(0, 10))
+        self.startupStatusLabel.pack(fill="x", padx=20, pady=(0, 10),side="left")
         # 初始化分段按钮状态
         if startupSchemeName == self.schemeName:
             self.selectSegmentedButtonForStartup.set("启用")
         else:
             self.selectSegmentedButtonForStartup.set("禁用")
 
-        # 分割线(不显示)
-        ctk.CTkFrame(self, height=1, fg_color="gray70").pack(fill="x", padx=20)
-
         # 备注卡片
-        descCard = ctk.CTkFrame(self, corner_radius=10)
-        descCard.pack(fill="both", expand=True, padx=20, pady=15)
+        descCard = ctk.CTkFrame(self.descFrame, corner_radius=10)
+        descCard.pack(fill="both", expand=True, padx=10, pady=5)
         # 卡片顶部标题行
         descHeader = ctk.CTkFrame(descCard, fg_color="transparent")
-        descHeader.pack(fill="x", pady=(10, 5), padx=15)
+        descHeader.pack(fill="x", pady=(5, 2), padx=5)
         ctk.CTkLabel(descHeader, text="方案备注", font=("微软雅黑", 16, "bold")).pack(side="left")
         # 自动保存状态提示 Label
         self.saveStatusVar = ctk.CTkLabel(
             descHeader,
             text="已自动保存",
-            text_color="gray60",
+            text_color="green",
             font=("微软雅黑", 12)
         )
-        self.saveStatusVar.pack(side="right")
+        self.saveStatusVar.pack(side="left", padx=10)
         # 文本输入框 (自动撑满剩余空间)
         self.descTextbox = ctk.CTkTextbox(descCard, font=("微软雅黑", 14), corner_radius=5)
-        self.descTextbox.pack(fill="both", expand=True, padx=15, pady=(0, 15))
+        self.descTextbox.pack(fill="both", expand=True, padx=5, pady=(0, 5))#fill="both"表示水平和垂直都填充，expand=True表示扩展以填充父容器的剩余空间
         # 绑定键盘释放事件，触发防抖自动保存
         self.descTextbox.bind("<KeyRelease>", self.onTextChange)
         # 初次加载数据
         self.loadDescription()
 
-        ctk.CTkFrame(self, height=1, fg_color="gray70").pack(fill="x", padx=20)
-
-        # 获取拍平后的快捷键列表
-        shortcuts = getShortcutBySchemeName(self.schemeName)
-        # print(f"{shortcuts}")
-        self.shortcutInstances = []  # 存储后续创建的快捷键卡片实例
-
-        # 快捷键列表外层卡片 (可滚动)
-        self.profilesFrame = ctk.CTkScrollableFrame(self, corner_radius=10)
-        self.profilesFrame.pack(fill="both", expand=True, padx=20, pady=15)
-
-        # 卡片顶部标题行 (和备注卡片一样的风格)
-        listHeader = ctk.CTkFrame(self.profilesFrame, fg_color="transparent")
-        listHeader.pack(fill="x", pady=(10, 5), padx=15)
-        ctk.CTkLabel(listHeader, text="快捷键列表", font=("微软雅黑", 16, "bold")).pack(side="left")
 
     def changeTheShortcutSchemeName(self):
         dialog = ctk.CTkInputDialog(text="输入新名字", title="改变快捷键方案名字")
@@ -193,7 +194,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             # 调用 configManager 保存
             changeShortcutSchemeConfig_Description(newDescription=newDescription, name=self.schemeName)
             # 保存成功，恢复状态
-            self.saveStatusVar.configure(text="已自动保存", text_color="gray60")
+            self.saveStatusVar.configure(text="已自动保存", text_color="green")
         except Exception as e:
             self.saveStatusVar.configure(text="保存失败", text_color="red")
             messagebox.showerror("错误", f"备注保存失败: {e}")
@@ -207,5 +208,5 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             self.descTextbox.delete("1.0", "end")# 清空文本框
             self.descTextbox.insert("1.0", description)
             # 加载完成后重置状态
-            self.saveStatusVar.configure(text="已自动保存", text_color="gray60")
+            self.saveStatusVar.configure(text="已保存", text_color="green")
 
