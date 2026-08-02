@@ -169,6 +169,27 @@ def getConfigInfo(config):
         "startupEnabled": startupEnabled
     }
 
+def getShortcutBySchemeName(schemeName):
+    """根据快捷键方案名获取对应的快捷键列表"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        return []
+    profiles = config.get("profiles", [])
+    shortcuts = []
+    for profile in profiles:
+        shortcuts.extend(profile.get("shortcuts", []))
+    return shortcuts
+
+if __name__=="__main__":
+    # 测试代码
+    schemes = getShortcutBySchemeName("方案1")
+    for scheme in schemes:
+        print(scheme)
+
+# {'keyCombination': 'ctrl+alt+1', 'action': 'copyText', 'actionParams': {'text': 'myemail@example.com'}, 'enabled': True}
+# {'keyCombination': 'ctrl+alt+2', 'action': 'copyText', 'actionParams': {'text': 'myemail2@example.com'}, 'enabled': True}
+
+
 # {
 #     "settings": {
 #         "name": "测试快捷键方案",

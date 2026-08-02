@@ -240,7 +240,7 @@ def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
 
 
 def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None, newDescription=None,
-                               newStartupEnabled=False):
+                               newStartupEnabled=None):
     # 修改快捷键方案的配置
     # 当 schemeName 不为 None 且 schemeId 为 None 时，使用 schemeName 来修改配置
     if schemeName is not None and schemeId is None:
@@ -265,6 +265,71 @@ def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=Non
     except ValueError as e:
         messagebox.showerror("错误", str(e))
     # 当 schemeName 和 schemeId 都为 None 时，抛出异常
+    try:
+        if schemeName is None and schemeId is None:
+            raise ValueError("必须且只能指定方案名称或方案ID中的一个")
+    except ValueError as e:
+        messagebox.showerror("错误", str(e))
+
+
+# def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None,
+#                                newDescription=None, newStartupEnabled=None):
+#     # ===== 按 schemeName 修改 =====
+#     if schemeName is not None and schemeId is None:
+#         # 记录实际要操作的方案名（如果改了名，后续用新名字）
+#         effectiveName = schemeName
+#
+#         if newSchemeName is not None and newSchemeName.strip() != "":
+#             changeShortcutSchemeConfig_Name(newName=newSchemeName, oldName=schemeName)
+#             effectiveName = newSchemeName  # ★ 改名后，后续操作用新名字
+#
+#         if newDescription is not None and newDescription.strip() != "":
+#             changeShortcutSchemeConfig_Description(newDescription=newDescription,
+#                                                    name=effectiveName)  # ★ 用 effectiveName
+#
+#         if newStartupEnabled is not None:  # ★ 默认 None，不传就不执行
+#             changeShortcutSchemeConfig_StartupEnabled(name=effectiveName,
+#                                                       newStartupEnabled=newStartupEnabled)  # ★ 用 effectiveName
+
+
+def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None,
+                               newDescription=None, newStartupEnabled=None):
+    if schemeName is not None and schemeId is None:
+        # 记录实际要操作的方案名（如果改了名，后续用新名字）
+        effectiveName = schemeName
+        if newSchemeName is not None and newSchemeName.strip() != "":
+            changeShortcutSchemeConfig_Name(newName=newSchemeName, oldName=schemeName)
+            effectiveName = newSchemeName  # ★ 改名后，后续操作用新名字
+        if newDescription is not None and newDescription.strip() != "":
+            changeShortcutSchemeConfig_Description(newDescription=newDescription,
+                                                   name=effectiveName)  # ★ 用 effectiveName
+        if newStartupEnabled is not None:  # ★ 默认 None，不传就不执行
+            changeShortcutSchemeConfig_StartupEnabled(name=effectiveName,
+                                                      newStartupEnabled=newStartupEnabled)  # ★ 用 effectiveName
+    if schemeId is not None and schemeName is None:
+        effectiveName = None  # 需要先查出当前名字
+        if newSchemeName is not None and newSchemeName.strip() != "":
+            # 改名前先查出当前名字
+            config = getShortcutSchemeConfigById(schemeId)
+            if config is None:
+                raise FileNotFoundError(f"找不到方案ID '{schemeId}' 的配置文件")
+            oldName = config["settings"]["name"]
+            changeShortcutSchemeConfig_Name(newName=newSchemeName, schemeId=schemeId)
+            effectiveName = newSchemeName
+        else:
+            config = getShortcutSchemeConfigById(schemeId)
+            if config is None:
+                raise FileNotFoundError(f"找不到方案ID '{schemeId}' 的配置文件")
+            effectiveName = config["settings"]["name"]
+        if newDescription is not None and newDescription.strip() != "":
+            changeShortcutSchemeConfig_Description(newDescription=newDescription, name=effectiveName)
+        if newStartupEnabled is not None:
+            changeShortcutSchemeConfig_StartupEnabled(name=effectiveName, newStartupEnabled=newStartupEnabled)
+    try:
+        if schemeName is not None and schemeId is not None:
+            raise ValueError("只能指定方案名称或方案ID中的一个，不能同时指定两个")
+    except ValueError as e:
+        messagebox.showerror("错误", str(e))
     try:
         if schemeName is None and schemeId is None:
             raise ValueError("必须且只能指定方案名称或方案ID中的一个")
