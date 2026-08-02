@@ -24,19 +24,18 @@ def theNumberOfTargetFilesInTheFolder(folderPath):
     for f in folder.iterdir():
         if not f.is_file():
             continue
-        if f.suffix != ".json":  # 检查文件的后缀名是否为 ".json"，如果不是，则跳过该文件，继续下一个文件的处理。
+        if f.suffix != ".json":
             continue
         try:
             with open(f, "r", encoding="utf-8") as fp:
                 data = json.load(fp)
-            # 快捷键方案的标志性特征：顶层有 "profiles" 键
-            if isinstance(data,
-                          dict) and "profiles" in data:  # 检查解析后的数据是否为字典类型，并且是否包含 "profiles" 键，如果满足条件，则认为该文件是一个有效的快捷键方案文件，计数器加1。
+            # 快捷键方案的标志性特征：顶层有 "shortcuts" 键
+            if isinstance(data, dict) and "shortcuts" in data:
                 count += 1
         except (json.JSONDecodeError, UnicodeDecodeError):
-            # 跳过无法解析的文件
             continue
     return count
+
 
 
 def getShortcutSchemes(folderPath):
@@ -51,15 +50,12 @@ def getShortcutSchemes(folderPath):
         try:
             with open(f, "r", encoding="utf-8") as fp:
                 data = json.load(fp)
-            if isinstance(data, dict) and "profiles" in data:
-                # 顺便把方案名也取出来，方便后续直接用
-                schemeName = data.get("settings", {}).get("name", f.stem)  # 获取方案名，如果配置文件中没有设置方案名，则使用文件名（不带扩展名）作为方案名。
-                # .get("name", f.stem)意思是，如果 "name" 键不存在，则返回 f.stem，即文件名去掉扩展名的部分。
+            if isinstance(data, dict) and "shortcuts" in data:  # <-- 这里改掉
+                schemeName = data.get("settings", {}).get("name", f.stem)
                 description = data.get("settings", {}).get("description", "")
                 schemeId = data.get("settings", {}).get("currentProfileId", 0)
                 startupEnabled = data.get("settings", {}).get("startupEnabled", False)
                 schemes.append({
-                    # "filePath": f,#暂时不需要文件路径，后续如果需要再加上
                     "name": schemeName,
                     "description": description,
                     "schemeId": schemeId,
@@ -67,6 +63,7 @@ def getShortcutSchemes(folderPath):
                 })
         except (json.JSONDecodeError, UnicodeDecodeError):
             continue
+
     # 根据id排序
     schemes.sort(key=lambda x: x["schemeId"])
     return schemes
@@ -174,59 +171,38 @@ def getShortcutBySchemeName(schemeName):
     config = getShortcutSchemeConfigBySchemeName(schemeName)
     if config is None:
         return []
-    profiles = config.get("profiles", [])
-    shortcuts = []
-    for profile in profiles:
-        shortcuts.extend(profile.get("shortcuts", []))
+    # 直接获取顶层的 shortcuts 列表
+    shortcuts = config.get("shortcuts", [])
     return shortcuts
 
+
+def getProfileBySchemeName(schemeName):
+    """根据快捷键方案名获取对应的配置文件中的profiles列表"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        return []
+    profiles = config.get("profiles", [])
+    return profiles
+
+def getProfileInfoBySchemeName(schemeName):
+    """根据快捷键方案名获取对应的配置文件中的profiles列表，并返回每个profile的基本信息"""
+    profiles = getProfileBySchemeName(schemeName)
+    profileInfoList = []
+    for profile in profiles:
+        profileInfo = {
+            "id": profile.get("id", 0),
+            "name": profile.get("name", ""),
+            "description": profile.get("description", ""),
+            "type": profile.get("type", ""),
+            "readOnly": profile.get("readOnly", False),
+            "shortcutsCount": len(profile.get("shortcuts", []))
+        }
+        profileInfoList.append(profileInfo)
+    return profileInfoList
+
 if __name__=="__main__":
-    # 测试代码
-    schemes = getShortcutBySchemeName("方案1")
-    for scheme in schemes:
-        print(scheme)
-
-# {'keyCombination': 'ctrl+alt+1', 'action': 'copyText', 'actionParams': {'text': 'myemail@example.com'}, 'enabled': True}
-# {'keyCombination': 'ctrl+alt+2', 'action': 'copyText', 'actionParams': {'text': 'myemail2@example.com'}, 'enabled': True}
-
-
-# {
-#     "settings": {
-#         "name": "测试快捷键方案",
-#         "description": "测试快捷键方案",
-#         "startupEnabled": true,
-#         "currentProfileId": 0
-#     },
-#     "profiles": [
-#         {
-#             "id": 1,
-#             "name": "我的快捷键1",
-#             "description": "自定义快捷键1",
-#             "type": "custom",
-#             "readOnly": false,
-#             "shortcuts": [
-#                 {
-#                     "keyCombination": "ctrl+alt+1",
-#                     "action": "copyText",
-#                     "actionParams": {"text": "myemail@example.com"},
-#                     "enabled": true
-#                 }
-#             ]
-#         },
-#         {
-#             "id": 2,
-#             "name": "我的快捷键2",
-#             "description": "自定义快捷键2",
-#             "readOnly": false,
-#             "type": "custom",
-#             "shortcuts": [
-#                 {
-#                     "keyCombination": "ctrl+alt+2",
-#                     "action": "copyText",
-#                     "actionParams": {"text": "myemail2@example.com"},
-#                     "enabled": true
-#                 }
-#             ]
-#         }
-#     ]
-# }
+    print(getProfileInfoBySchemeName("方案1"))
+    print("\n")
+    print(getProfileBySchemeName("方案1"))
+    print("\n")
+    print(getShortcutBySchemeName("方案1"))

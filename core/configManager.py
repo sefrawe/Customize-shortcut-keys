@@ -56,14 +56,13 @@ def createNewShortcutSchemeConfig(newName):
             "name": newName,
             "description": "这是一个新建快捷键方案",
             "startupEnabled": False,
-            "currentProfileId": currentNumberOfShortcutKeySchemes  # 从0开始计数，当前快捷键方案的ID为当前已有快捷键方案数量
-
+            "currentProfileId": currentNumberOfShortcutKeySchemes
         },
-        "profiles": [
-
+        "shortcuts": [  # <-- 把 "profiles" 改成 "shortcuts"
         ]
     }
     return newConfig
+
 
 
 def refresgCurrentNumberOfShortcutKeySchemes():
@@ -77,38 +76,6 @@ def saveShortcutSchemeConfig(newConfig, newName):
         json.dump(newConfig, f, ensure_ascii=False, indent=2)
 
 
-# def changeShortcutSchemeConfig_Name(newName,schemeId=None, oldName=None):
-#     # 修改配置文件中的快捷键方案名称
-#     if oldName is not None and schemeId is None:
-#         Config = getShortcutSchemeConfigBySchemeName(oldName)
-#         Config["settings"]["name"] = newName
-#         # 保存修改后的配置文件
-#         saveShortcutSchemeConfig(Config, newName)
-#         deleteShortcutSchemeConfig(oldName)
-#     if schemeId is not None and oldName is None:
-#         Config = getShortcutSchemeConfigById(schemeId)
-#         Config["settings"]["name"] = newName
-#         # 保存修改后的配置文件
-#         saveShortcutSchemeConfig(Config, newName)
-# ❌ 旧代码：Config 为 None 时直接崩溃
-
-# ✅ 新代码：加 None 检查，给出清晰的错误提示
-# def changeShortcutSchemeConfig_Name(newName, schemeId=None, oldName=None):
-#     if oldName is not None and schemeId is None:
-#         config = getShortcutSchemeConfigBySchemeName(oldName)
-#         if config is None:
-#             raise FileNotFoundError(f"找不到方案 '{oldName}' 的配置文件")
-#         config["settings"]["name"] = newName
-#         saveShortcutSchemeConfig(config, newName)
-#         deleteShortcutSchemeConfig(oldName)
-#     # ... schemeId 部分加同样的 None 检查
-#     if schemeId is not None and oldName is None:
-#         config = getShortcutSchemeConfigById(schemeId)
-#         if config is None:
-#             raise FileNotFoundError(f"找不到方案ID '{schemeId}' 的配置文件")
-#         config["settings"]["name"] = newName
-#         saveShortcutSchemeConfig(config, newName)
-#
 def changeShortcutSchemeConfig_Name(newName, schemeId=None, oldName=None):
     """修改配置文件中的快捷键方案名称"""
     if oldName is not None and schemeId is None:
@@ -272,26 +239,6 @@ def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=Non
         messagebox.showerror("错误", str(e))
 
 
-# def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None,
-#                                newDescription=None, newStartupEnabled=None):
-#     # ===== 按 schemeName 修改 =====
-#     if schemeName is not None and schemeId is None:
-#         # 记录实际要操作的方案名（如果改了名，后续用新名字）
-#         effectiveName = schemeName
-#
-#         if newSchemeName is not None and newSchemeName.strip() != "":
-#             changeShortcutSchemeConfig_Name(newName=newSchemeName, oldName=schemeName)
-#             effectiveName = newSchemeName  # ★ 改名后，后续操作用新名字
-#
-#         if newDescription is not None and newDescription.strip() != "":
-#             changeShortcutSchemeConfig_Description(newDescription=newDescription,
-#                                                    name=effectiveName)  # ★ 用 effectiveName
-#
-#         if newStartupEnabled is not None:  # ★ 默认 None，不传就不执行
-#             changeShortcutSchemeConfig_StartupEnabled(name=effectiveName,
-#                                                       newStartupEnabled=newStartupEnabled)  # ★ 用 effectiveName
-
-
 def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None,
                                newDescription=None, newStartupEnabled=None):
     if schemeName is not None and schemeId is None:
@@ -335,44 +282,3 @@ def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=Non
             raise ValueError("必须且只能指定方案名称或方案ID中的一个")
     except ValueError as e:
         messagebox.showerror("错误", str(e))
-
-# {
-#     "settings": {
-#         "name": "测试快捷键方案",
-#         "description": "测试快捷键方案",
-#         "startupEnabled": true,
-#         "currentProfileId": 0
-#     },
-#     "profiles": [
-#         {
-#             "id": 1,
-#             "name": "我的快捷键1",
-#             "description": "自定义快捷键1",
-#             "type": "custom",
-#             "readOnly": false,
-#             "shortcuts": [
-#                 {
-#                     "keyCombination": "ctrl+alt+1",
-#                     "action": "copyText",
-#                     "actionParams": {"text": "myemail@example.com"},
-#                     "enabled": true
-#                 }
-#             ]
-#         },
-#         {
-#             "id": 2,
-#             "name": "我的快捷键2",
-#             "description": "自定义快捷键2",
-#             "readOnly": false,
-#             "type": "custom",
-#             "shortcuts": [
-#                 {
-#                     "keyCombination": "ctrl+alt+2",
-#                     "action": "copyText",
-#                     "actionParams": {"text": "myemail2@example.com"},
-#                     "enabled": true
-#                 }
-#             ]
-#         }
-#     ]
-# }

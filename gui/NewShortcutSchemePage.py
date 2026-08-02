@@ -4,8 +4,9 @@
 from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description
+
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
-    getShortcutSchemeConfigBySchemeName
+    getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName
 
 '''
 原先schemeName 混在 **kwargs 里被传给了 CTkFrame，而 CTkFrame 不认识它。导致启动报错。
@@ -21,7 +22,8 @@ import customtkinter as ctk
 
 
 class NewShortcutSchemePage(ctk.CTkFrame):
-    def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None,**kwargs):#on*ed用于回调
+    def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None,**kwargs):
+        #on*ed用于回调
         # ← 新增 on*ed 回调参数
         # ← schemeName 单独拎出来
         super().__init__(master, **kwargs)  # ← kwargs 里只剩 fg_color，不会再报错
@@ -74,14 +76,11 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         # 备注卡片
         descCard = ctk.CTkFrame(self, corner_radius=10)
         descCard.pack(fill="both", expand=True, padx=20, pady=15)
-
         # 卡片顶部标题行
         descHeader = ctk.CTkFrame(descCard, fg_color="transparent")
         descHeader.pack(fill="x", pady=(10, 5), padx=15)
-
         ctk.CTkLabel(descHeader, text="方案备注", font=("微软雅黑", 16, "bold")).pack(side="left")
-
-        # ★ 自动保存状态提示 Label
+        # 自动保存状态提示 Label
         self.saveStatusVar = ctk.CTkLabel(
             descHeader,
             text="已自动保存",
@@ -89,7 +88,6 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             font=("微软雅黑", 12)
         )
         self.saveStatusVar.pack(side="right")
-
         # 文本输入框 (自动撑满剩余空间)
         self.descTextbox = ctk.CTkTextbox(descCard, font=("微软雅黑", 14), corner_radius=5)
         self.descTextbox.pack(fill="both", expand=True, padx=15, pady=(0, 15))
@@ -98,26 +96,21 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         # 初次加载数据
         self.loadDescription()
 
+        ctk.CTkFrame(self, height=1, fg_color="gray70").pack(fill="x", padx=20)
 
-    # def changeTheShortcutSchemeName(self):
-    #     dialog = ctk.CTkInputDialog(text="输入新名字", title="改变快捷键方案名字")
-    #     self.schemeName = dialog.get_input()
-    #     newName = self.schemeName
-    #     if newName is None or newName.strip() == "":  # ← 用变量判断
-    #         return
-    #     oldName = self.schemeName  # ← 先保存旧名字！原代码直接覆盖了，是bug
-    #     try:
-    #         if newName in getShortcutSchemesNames(configDirectory):
-    #             raise ValueError(f"快捷键方案名称 '{newName}' 已存在，请更换名称")
-    #         # 用正确的参数名调用
-    #         changeShortcutSchemeConfig(newSchemeName=newName, schemeName=oldName)
-    #         # 改名成功，更新自身记录
-    #         self.schemeName = newName
-    #         # 通过回调通知主窗口刷新导航栏并跳转
-    #         if self.onRenamed:
-    #             self.onRenamed(oldName, newName)
-    #     except ValueError as e:
-    #         messagebox.showerror("错误", str(e))
+        # 获取拍平后的快捷键列表
+        shortcuts = getShortcutBySchemeName(self.schemeName)
+        # print(f"{shortcuts}")
+        self.shortcutInstances = []  # 存储后续创建的快捷键卡片实例
+
+        # 快捷键列表外层卡片 (可滚动)
+        self.profilesFrame = ctk.CTkScrollableFrame(self, corner_radius=10)
+        self.profilesFrame.pack(fill="both", expand=True, padx=20, pady=15)
+
+        # 卡片顶部标题行 (和备注卡片一样的风格)
+        listHeader = ctk.CTkFrame(self.profilesFrame, fg_color="transparent")
+        listHeader.pack(fill="x", pady=(10, 5), padx=15)
+        ctk.CTkLabel(listHeader, text="快捷键列表", font=("微软雅黑", 16, "bold")).pack(side="left")
 
     def changeTheShortcutSchemeName(self):
         dialog = ctk.CTkInputDialog(text="输入新名字", title="改变快捷键方案名字")
