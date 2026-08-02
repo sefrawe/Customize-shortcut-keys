@@ -169,10 +169,20 @@ def changeShortcutSchemeConfig_Name(newName, schemeId=None, oldName=None):
 def changeShortcutSchemeConfig_Description(newDescription="", schemeId=None, name=None):
     # 修改配置文件中的快捷键方案描述
     if name is not None and schemeId is None:
-        pass
-    if schemeId is not None and name is None:
-        pass
-    pass
+        # 按方案名查找
+        config = getShortcutSchemeConfigBySchemeName(name)
+        if config is None:
+            raise FileNotFoundError(f"找不到方案 '{name}' 的配置文件")
+        config["settings"]["description"] = newDescription
+        # 保存 (注意：此时文件名应该和 schemeName 是一致的，如果改名后还没刷新可能会报错，但正常流程没问题)
+        saveShortcutSchemeConfig(config, name)
+    elif schemeId is not None and name is None:
+        # 按ID查找
+        config = getShortcutSchemeConfigById(schemeId)
+        if config is None:
+            raise FileNotFoundError(f"找不到方案ID '{schemeId}' 的配置文件")
+        config["settings"]["description"] = newDescription
+        saveShortcutSchemeConfig(config, config["settings"]["name"])
 
 
 def changeShortcutSchemeConfig_StartupEnabled(name=None, schemeId=None, newStartupEnabled=False):
