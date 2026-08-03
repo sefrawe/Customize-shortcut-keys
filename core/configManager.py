@@ -59,11 +59,11 @@ def createNewShortcutSchemeConfig(newName):
             "startupEnabled": False,
             "currentProfileId": currentNumberOfShortcutKeySchemes
         },
-        "shortcuts": [  # <-- 把 "profiles" 改成 "shortcuts"
+        "shortcuts": [
+
         ]
     }
     return newConfig
-
 
 
 def refresgCurrentNumberOfShortcutKeySchemes():
@@ -181,7 +181,6 @@ def changeShortcutSchemeConfig_StartupEnabled(name=None, schemeId=None, newStart
             messagebox.showerror("错误", str(e))
 
 
-
 def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None, newDescription=None,
                                newStartupEnabled=None):
     # 修改快捷键方案的配置
@@ -259,9 +258,10 @@ def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=Non
     except ValueError as e:
         messagebox.showerror("错误", str(e))
 
+
 def copyShortcutSchemeConfig(newSchemeName, schemeName):
     """复制快捷键方案配置文件"""
-    #校验在调用该函数的函数中做了
+    # 校验在调用该函数的函数中做了
     # 获取原方案配置
     originalConfig = getShortcutSchemeConfigBySchemeName(schemeName)
     if originalConfig is None:
@@ -301,7 +301,8 @@ def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
         except ValueError as e:
             messagebox.showerror("错误", str(e))
 
-def changeShortcutConfig_enabled(schemeName, shortcutId,newStatus):
+
+def changeShortcutConfig_enabled(schemeName, shortcutId, newStatus):
     """切换快捷键的在配置中的启用状态"""
     config = getShortcutSchemeConfigBySchemeName(schemeName)
     if config is None:
@@ -313,6 +314,7 @@ def changeShortcutConfig_enabled(schemeName, shortcutId,newStatus):
             saveShortcutSchemeConfig(config, schemeName)
             return
     raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
+
 
 def addShortcut(schemeName, shortcutName):
     """添加新的快捷键"""
@@ -343,6 +345,7 @@ def addShortcut(schemeName, shortcutName):
     config.get("shortcuts", []).append(newShortcut)
     saveShortcutSchemeConfig(config, schemeName)
 
+
 def deleteShortcut(schemeName, shortcutId):
     """删除指定快捷键"""
     config = getShortcutSchemeConfigBySchemeName(schemeName)
@@ -356,6 +359,7 @@ def deleteShortcut(schemeName, shortcutId):
             return
     raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
 
+
 def resignShortcutIds(schemeName):
     """重新分配快捷键ID，确保ID连续"""
     config = getShortcutSchemeConfigBySchemeName(schemeName)
@@ -365,4 +369,3 @@ def resignShortcutIds(schemeName):
     for index, shortcut in enumerate(shortcuts):
         shortcut["id"] = index
     saveShortcutSchemeConfig(config, schemeName)
-

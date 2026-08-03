@@ -46,7 +46,8 @@ class MainWindow(ctk.CTk):
 
         # index的含义：grid布局管理器中，row表示行，column表示列，index表示索引，从0开始计数。row=0表示第一行，column=0表示第一列，row=1表示第二行，column=1表示第二列，以此类推。
 
-        self.grid_columnconfigure(0,weight=0)  # 左侧导航栏固定宽度.完整解释：grid_columnconfigure方法用于配置网格列的权重。权重为0表示该列不会随着窗口大小变化而伸缩，而权重为1表示该列会根据窗口大小变化而伸缩。
+        self.grid_columnconfigure(0,
+                                  weight=0)  # 左侧导航栏固定宽度.完整解释：grid_columnconfigure方法用于配置网格列的权重。权重为0表示该列不会随着窗口大小变化而伸缩，而权重为1表示该列会根据窗口大小变化而伸缩。
         self.grid_rowconfigure(0, weight=1)  # 行可伸缩
         # 左侧导航栏（垂直菜单）
         self.nav_frame = ctk.CTkFrame(self, width=150, fg_color="#303030")  # 定义导航栏框架，设置宽度和背景颜色
@@ -58,9 +59,9 @@ class MainWindow(ctk.CTk):
         解决方法： 在 nav_frame 上调用 grid_propagate(False)，阻止子组件反向决定 frame 的尺寸，这样 width=400 才会生效
         '''
         # 将导航栏放置在左侧，填充整个高度（sticky="ns"表示上下填充），row=0表示第一行，column=0表示第一列。这句代码的作用是将导航栏放置在主窗口的左侧，并且填充整个高度，使其看起来像一个垂直菜单栏。
-        self.nav_frame.grid(row=0, column=0,sticky="ns")
+        self.nav_frame.grid(row=0, column=0, sticky="ns")
         # 导航栏的第 首页加设置加已有两项快捷键方案加1 行（当前index=4）可以伸缩，从而将按钮推到顶部
-        self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems,weight=1)
+        self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
 
         self.grid_columnconfigure(1, weight=1)  # 右侧内容区可伸缩
 
@@ -83,7 +84,8 @@ class MainWindow(ctk.CTk):
                 height=40
 
             )
-            btn.grid(row=i, column=0, pady=2, padx=10,sticky="ew")  # 填满宽度,各属性分别表示：row=i表示按钮所在行，column=0表示按钮所在列，pady=10表示上下间距为10像素，padx=20表示左右间距为20像素，sticky="ew"表示按钮在水平方向上填满整个单元格。
+            btn.grid(row=i, column=0, pady=2, padx=10,
+                     sticky="ew")  # 填满宽度,各属性分别表示：row=i表示按钮所在行，column=0表示按钮所在列，pady=10表示上下间距为10像素，padx=20表示左右间距为20像素，sticky="ew"表示按钮在水平方向上填满整个单元格。
             self.navButtons[item] = btn  # 存储按钮对象
 
         # 右侧内容区父容器
@@ -197,7 +199,8 @@ class MainWindow(ctk.CTk):
                 self.pages[key].destroy()  # 销毁旧页面
                 del self.pages[key]
         # 3. 重置旧弹簧行权重
-        self.nav_frame.grid_rowconfigure(oldSpringRow,weight=0)  # grid_rowconfigure方法用于配置网格行的权重。这里将旧弹簧行的权重设置为0，表示该行不会随着窗口大小变化而伸缩，从而避免布局问题。
+        self.nav_frame.grid_rowconfigure(oldSpringRow,
+                                         weight=0)  # grid_rowconfigure方法用于配置网格行的权重。这里将旧弹簧行的权重设置为0，表示该行不会随着窗口大小变化而伸缩，从而避免布局问题。
         # 4. 重新计算
         self.numberOfNavigationBarItems = theNumberOfTargetFilesInTheFolder(configDirectory) + 2
         # 5. 设置新弹簧行
@@ -207,7 +210,7 @@ class MainWindow(ctk.CTk):
         # 7. 重新创建方案按钮和页面
         self.createNavigationBarItemsBasedOnShortcutKeyScheme(getShortcutSchemes(configDirectory))
 
-    def handleSchemeRenamed(self, oldName, newName):#多出的参数删了就报错
+    def handleSchemeRenamed(self, oldName, newName):  # 多出的参数删了就报错
         """改名成功后由子页面回调：刷新导航栏 + 跳转到新页面"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
         self.showPage(newName)  # 跳转到改名后的页面
@@ -219,12 +222,12 @@ class MainWindow(ctk.CTk):
             if isinstance(page, NewShortcutSchemePage):
                 page.refreshSchemeStartupDisplay()
 
-    def handleSchemeCopied(self, oldSchemeName,newSchemeName, ):#多出的参数删了就报错
+    def handleSchemeCopied(self, oldSchemeName, newSchemeName, ):  # 多出的参数删了就报错
         """复制成功后由子页面回调：刷新导航栏 + 跳转到新页面"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
         self.showPage(oldSchemeName)  # 跳转被复制的页面
 
-    def handleSchemeDeleted(self, deletedSchemeName):#多出的参数删了就报错
+    def handleSchemeDeleted(self, deletedSchemeName):  # 多出的参数删了就报错
         """删除成功后由子页面回调：刷新导航栏 + 跳转到首页"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
         self.showPage("首页")  # 跳转到首页

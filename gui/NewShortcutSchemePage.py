@@ -30,9 +30,11 @@ self.contentFrame.grid_rowconfigure(0, weight=1)
 
 import customtkinter as ctk
 
+
 class NewShortcutSchemePage(ctk.CTkFrame):
-    def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None,onCopied=None,ondeleted=None,**kwargs):
-        #on*ed用于回调
+    def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None, onCopied=None, ondeleted=None,
+                 **kwargs):
+        # on*ed用于回调
         # ← 新增 on*ed 回调参数
         # ← schemeName 单独拎出来
         super().__init__(master, **kwargs)  # ← kwargs 里只剩 fg_color，不会再报错
@@ -41,24 +43,24 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.onStartupChanged = onStartupChanged
         self.onCopied = onCopied
         self.onDeleted = ondeleted
-        self._save_after_id = None# 防抖计时器ID(用于自动保存快捷键方案备注)
+        self._save_after_id = None  # 防抖计时器ID(用于自动保存快捷键方案备注)
 
-        self.grid_columnconfigure(0, weight=1)# 让标题水平可伸缩
-        self.grid_rowconfigure(0,weight=0)# 让标题垂直不可伸缩
+        self.grid_columnconfigure(0, weight=1)  # 让标题水平可伸缩
+        self.grid_rowconfigure(0, weight=0)  # 让标题垂直不可伸缩
 
         # self.grid_columnconfigure(1, weight=1)# 让内容区水平可伸缩
         """后一个框架的宽度由第一个框架决定，指定第二个框架的宽度为1，会导致它们均只占页面的一半宽度"""
-        self.grid_rowconfigure(1,weight=0)# 让描述区垂直不可伸缩
+        self.grid_rowconfigure(1, weight=0)  # 让描述区垂直不可伸缩
 
-        self.grid_rowconfigure(2, weight=1)# 让快捷键列表垂直可伸缩
+        self.grid_rowconfigure(2, weight=1)  # 让快捷键列表垂直可伸缩
 
-        #第一个框架用于放置标题和启用状态等
-        self.headFrame = ctk.CTkFrame(self,height=80,fg_color="transparent")
-        self.headFrame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)#sticky="ew"表示水平填充，sticky="nsew"表示水平和垂直都填充
+        # 第一个框架用于放置标题和启用状态等
+        self.headFrame = ctk.CTkFrame(self, height=80, fg_color="transparent")
+        self.headFrame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)  # sticky="ew"表示水平填充，sticky="nsew"表示水平和垂直都填充
         # 第二个框架用于放置快捷键方案描述
-        self.descFrame = ctk.CTkFrame(self,height=200,fg_color="transparent")
+        self.descFrame = ctk.CTkFrame(self, height=200, fg_color="transparent")
         self.descFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
-        #第三个框架用于放置快捷键列表
+        # 第三个框架用于放置快捷键列表
         self.shortcutFrame = ctk.CTkScrollableFrame(self)
         self.shortcutFrame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
 
@@ -71,7 +73,8 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         renameButton.pack(side="right", padx=5)
         copyButton = ctk.CTkButton(btnGroup, text="复制", width=80, command=self.copyTheShortcutScheme)
         copyButton.pack(side="right", padx=5)
-        deleteButton = ctk.CTkButton(btnGroup, text="删除", width=80, command=self.deleteTheShortcutScheme,fg_color="#A30000", hover_color="#7A0000")
+        deleteButton = ctk.CTkButton(btnGroup, text="删除", width=80, command=self.deleteTheShortcutScheme,
+                                     fg_color="#A30000", hover_color="#7A0000")
         deleteButton.pack(side="right", padx=5)
 
         self.selectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
@@ -86,10 +89,10 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             self.headFrame,
             text=f"当前启用方案: {startupSchemeName}" if startupSchemeName else "当前启用方案: 无",
             font=("微软雅黑", 16),
-            text_color="green"if startupSchemeName == self.schemeName else "orange",#这个不行，切换页面颜色不变
-            anchor="w"# 左对齐
+            text_color="green" if startupSchemeName == self.schemeName else "orange",  # 这个不行，切换页面颜色不变
+            anchor="w"  # 左对齐
         )
-        self.startupStatusLabel.pack(fill="x", padx=20, pady=(0, 10),side="left")
+        self.startupStatusLabel.pack(fill="x", padx=20, pady=(0, 10), side="left")
         # 初始化分段按钮状态
         if startupSchemeName == self.schemeName:
             self.selectSegmentedButtonForStartup.set("启用")
@@ -113,17 +116,14 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.saveStatusVar.pack(side="left", padx=10)
         # 文本输入框 (自动撑满剩余空间)
         self.descTextbox = ctk.CTkTextbox(descCard, font=("微软雅黑", 14), corner_radius=5)
-        self.descTextbox.pack(fill="both", expand=True, padx=5, pady=(0, 5))#fill="both"表示水平和垂直都填充，expand=True表示扩展以填充父容器的剩余空间
+        self.descTextbox.pack(fill="both", expand=True, padx=5,
+                              pady=(0, 5))  # fill="both"表示水平和垂直都填充，expand=True表示扩展以填充父容器的剩余空间
         # 绑定键盘释放事件，触发防抖自动保存
         self.descTextbox.bind("<KeyRelease>", self.onTextChange)
         # 初次加载数据
         self.loadDescription()
         # 渲染快捷键列表
         self.renderShortcutList()
-
-
-
-
 
     def changeTheShortcutSchemeName(self):
         dialog = ctk.CTkInputDialog(text="输入新名字", title="改变快捷键方案名字")
@@ -175,7 +175,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             startupSchemeName = None
         # 更新 Label 文本
         self.startupStatusLabel.configure(
-            text=f"当前启用方案: {startupSchemeName}" if startupSchemeName# 如果有启用方案，显示其名称
+            text=f"当前启用方案: {startupSchemeName}" if startupSchemeName  # 如果有启用方案，显示其名称
             else "当前启用方案: 无"
         )
         # 更新分段按钮选中态（避免触发 command 死循环）
@@ -219,7 +219,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         config = getShortcutSchemeConfigBySchemeName(self.schemeName)
         if config:
             description = config.get("settings", {}).get("description", "")
-            self.descTextbox.delete("1.0", "end")# 清空文本框
+            self.descTextbox.delete("1.0", "end")  # 清空文本框
             self.descTextbox.insert("1.0", description)
             # 加载完成后重置状态
             self.saveStatusVar.configure(text="已保存", text_color="green")
@@ -271,7 +271,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             return
         self.refreshShortcutStartupDisplay(shortcutId)
 
-    def refreshShortcutStartupDisplay(self,shortcutId):
+    def refreshShortcutStartupDisplay(self, shortcutId):
         """刷新快捷键的启用状态显示"""
         shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
         if not shortcut:
@@ -314,7 +314,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             font=("微软雅黑", 14),
             bg_color="transparent"
         )
-        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 按实际冲突检查结果替换提示文案
+        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 和冲突检查功能一起最后做，按实际冲突检查结果替换提示文案
 
         for item in shortcuts:
             # 1. 单行卡片外框
@@ -345,14 +345,16 @@ class NewShortcutSchemePage(ctk.CTkFrame):
 
             # 7. 删除按钮（最右侧）
             (ctk.CTkButton(actionFrame, text="删除", width=50, fg_color="#A30000", hover_color="#7A0000",
-                            command=lambda shortcutId=item.get("id"): self.deleteShortcut(shortcutId)
-                            # command=lambda: self.deleteShortcut(item.get("id"))
-                            )
+                           command=lambda shortcutId=item.get("id"): self.deleteShortcut(shortcutId)
+                           # command=lambda: self.deleteShortcut(item.get("id"))
+                           )
             .pack(
                 side="right", padx=(5, 0)
             ))
             # 6. 编辑按钮
-            ctk.CTkButton(actionFrame, text="编辑", width=50).pack(side="right", padx=5)
+            ctk.CTkButton(actionFrame, text="编辑", width=50,
+                          command=None  # todo 要弹出个自定义窗口，还要查询回显，后端逻辑未定难以实现
+                          ).pack(side="right", padx=5)
             # 5. 状态开关
             shortcutsSelectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
                 actionFrame,
@@ -387,7 +389,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             return
         try:
             deleteShortcut(schemeName=self.schemeName, shortcutId=shortcutId)
-            #id重新分配后，刷新整个列表
+            # id重新分配后，刷新整个列表
             resignShortcutIds(schemeName=self.schemeName)
             self.refreshShortcutList()
         except FileNotFoundError as e:

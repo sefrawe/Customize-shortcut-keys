@@ -37,7 +37,6 @@ def theNumberOfTargetFilesInTheFolder(folderPath):
     return count
 
 
-
 def getShortcutSchemes(folderPath):
     """获取文件夹中所有快捷键方案的文件"""
     folder = Path(folderPath)
@@ -152,6 +151,7 @@ def getConfigInfo(config):
         "startupEnabled": startupEnabled
     }
 
+
 def getShortcutBySchemeName(schemeName):
     """根据快捷键方案名获取对应的快捷键列表"""
     config = getShortcutSchemeConfigBySchemeName(schemeName)
@@ -192,6 +192,7 @@ def getStartupEnabledShortcutBySchemeName(schemeName):
     enabledShortcuts = [s for s in shortcuts if s.get("enabled", False)]
     return enabledShortcuts
 
+
 def getStartupEnabledShortcutNameBySchemeName(schemeName):
     """根据方案名字获取被设置为启用状态的快捷键名称列表"""
     enabledShortcuts = getStartupEnabledShortcutBySchemeName(schemeName)
@@ -199,14 +200,14 @@ def getStartupEnabledShortcutNameBySchemeName(schemeName):
     return enabledShortcutNames
 
 
-
-def getShortcutByShortcutId(schemeName,shortcutId):
+def getShortcutByShortcutId(schemeName, shortcutId):
     """根据快捷键方案名和快捷键ID获取对应的快捷键"""
     shortcuts = getShortcutBySchemeName(schemeName)
     for shortcut in shortcuts:
         if shortcut.get("id") == shortcutId:
             return shortcut
     return None  # 如果没有找到对应的快捷键，返回 None
+
 
 def getshortcut(shortcut):
     """根据快捷键获取对应的快捷键信息"""
@@ -223,12 +224,7 @@ def getshortcut(shortcut):
     return shortcutInfo
 
 
-
-
-
-
-
-if __name__=="__main__":
+if __name__ == "__main__":
     # print(getProfileInfoBySchemeName("方案1"))
     # print("\n")
     # print(getProfileBySchemeName("方案1"))
