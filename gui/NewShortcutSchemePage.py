@@ -5,7 +5,7 @@ from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
     copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, createNewShortcutSchemeConfig, \
-    addShortcut
+    addShortcut, deleteShortcut, resignShortcutIds
 
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
     getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
@@ -118,7 +118,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.descTextbox.bind("<KeyRelease>", self.onTextChange)
         # 初次加载数据
         self.loadDescription()
-
+        # 渲染快捷键列表
         self.renderShortcutList()
 
 
@@ -344,15 +344,20 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             actionFrame.pack(side="right", padx=10, pady=5)
 
             # 7. 删除按钮（最右侧）
-            ctk.CTkButton(actionFrame, text="删除", width=50, fg_color="#A30000", hover_color="#7A0000").pack(
+            (ctk.CTkButton(actionFrame, text="删除", width=50, fg_color="#A30000", hover_color="#7A0000",
+                            command=lambda shortcutId=item.get("id"): self.deleteShortcut(shortcutId)
+                            # command=lambda: self.deleteShortcut(item.get("id"))
+                            )
+            .pack(
                 side="right", padx=(5, 0)
-            )
+            ))
             # 6. 编辑按钮
             ctk.CTkButton(actionFrame, text="编辑", width=50).pack(side="right", padx=5)
             # 5. 状态开关
             shortcutsSelectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
                 actionFrame,
                 values=["启用", "禁用"],
+
                 command=lambda value, shortcutId=item.get("id"): self.changeShortcutEnabled(shortcutId, value)
             )
             shortcutsSelectSegmentedButtonForStartup.pack(side="right", padx=5)
@@ -362,6 +367,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
 
     @staticmethod
     def _shortcutSortKey(shortcut):
+        """用于排序快捷键列表，优先按数字ID排序，其次按字符串ID排序"""
         shortcutId = shortcut.get("id", 0)
         if isinstance(shortcutId, int):
             return (0, shortcutId)
@@ -373,3 +379,16 @@ class NewShortcutSchemePage(ctk.CTkFrame):
                 return (0, int(suffix))
             return (1, shortcutId)
         return (2, str(shortcutId))
+
+    def deleteShortcut(self, shortcutId):
+        """删除单个快捷键"""
+        confirm = messagebox.askyesno("确认删除", f"确定要删除快捷键 ID 为 '{shortcutId}' 的快捷键吗？此操作不可撤销。")
+        if not confirm:
+            return
+        try:
+            deleteShortcut(schemeName=self.schemeName, shortcutId=shortcutId)
+            #id重新分配后，刷新整个列表
+            resignShortcutIds(schemeName=self.schemeName)
+            self.refreshShortcutList()
+        except FileNotFoundError as e:
+            messagebox.showerror("错误", f"删除快捷键失败: {e}, 请确保方案的配置文件存在和完整。")

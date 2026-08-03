@@ -342,3 +342,27 @@ def addShortcut(schemeName, shortcutName):
     }
     config.get("shortcuts", []).append(newShortcut)
     saveShortcutSchemeConfig(config, schemeName)
+
+def deleteShortcut(schemeName, shortcutId):
+    """删除指定快捷键"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    # 遍历快捷键列表，找到对应的快捷键并删除
+    for i, shortcut in enumerate(config.get("shortcuts", [])):
+        if shortcut.get("id") == shortcutId:
+            del config["shortcuts"][i]
+            saveShortcutSchemeConfig(config, schemeName)
+            return
+    raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
+
+def resignShortcutIds(schemeName):
+    """重新分配快捷键ID，确保ID连续"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    shortcuts = config.get("shortcuts", [])
+    for index, shortcut in enumerate(shortcuts):
+        shortcut["id"] = index
+    saveShortcutSchemeConfig(config, schemeName)
+
