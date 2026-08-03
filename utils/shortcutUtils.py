@@ -75,11 +75,6 @@ def getShortcutSchemesNames(folderPath):
     return [scheme["name"] for scheme in schemes]
 
 
-# def getShortcutSchemesDescriptions(folderPath):
-#     """获取文件夹中所有快捷键方案的描述"""
-#     schemes = getShortcutSchemes(folderPath)
-#     return [scheme["description"] for scheme in schemes]
-
 def getShortcutSchemesIds(folderPath):
     """获取文件夹中所有快捷键方案的ID"""
     schemes = getShortcutSchemes(folderPath)
@@ -124,15 +119,6 @@ def getStartupEnabledShortcutScheme(folderPath):
     return None  # 如果没有被设置为启动启用状态的方案，返回 None
 
 
-# def getShortcutSchemeConfigBySchemeName(schemeName):
-#     # 根据快捷键方案名获取对应的配置文件内容# ❌ 旧代码：按文件名查找，文件名≠方案名时就返回 None
-#     schemeFilePath = configDirectory / f"{schemeName}.json"
-#     if not schemeFilePath.exists():
-#         return None
-#     with open(schemeFilePath, "r", encoding="utf-8") as f:
-#         config = json.load(f)
-#     return config
-# ✅ 新代码：遍历所有 JSON，按 settings.name 匹配（和 getShortcutSchemeConfigById 同思路）
 def getShortcutSchemeConfigBySchemeName(schemeName):
     for file in configDirectory.glob("*.json"):
         with open(file, "r", encoding="utf-8") as f:
@@ -199,6 +185,9 @@ def getProfileInfoBySchemeName(schemeName):
         }
         profileInfoList.append(profileInfo)
     return profileInfoList
+
+
+
 
 if __name__=="__main__":
     print(getProfileInfoBySchemeName("方案1"))

@@ -180,31 +180,6 @@ def changeShortcutSchemeConfig_StartupEnabled(name=None, schemeId=None, newStart
             messagebox.showerror("错误", str(e))
 
 
-def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
-    # ✅ 新代码：遍历查找 settings.name 匹配的文件再删除
-    if schemeName is not None and schemeId is None:
-        for file in configDirectory.glob("*.json"):
-            with open(file, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            if config.get("settings", {}).get("name") == schemeName:
-                file.unlink()
-                return
-        raise FileNotFoundError(f"快捷键方案 '{schemeName}' 的配置文件不存在")
-    elif schemeId is not None and schemeName is None:  # ❌ 旧代码：按文件名删除
-        for file in configDirectory.glob("*.json"):
-            with open(file, "r", encoding="utf-8") as f:
-                config = json.load(f)
-            if config.get("settings", {}).get("currentProfileId") == schemeId:
-                file.unlink()  # 删除文件
-                return
-        raise FileNotFoundError(f"快捷键方案ID '{schemeId}' 的配置文件不存在")
-    else:
-        try:
-            if schemeName is not None and schemeId is not None:
-                raise ValueError("只能指定方案名称或方案ID中的一个，不能同时指定两个")
-        except ValueError as e:
-            messagebox.showerror("错误", str(e))
-
 
 def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None, newDescription=None,
                                newStartupEnabled=None):
@@ -282,3 +257,45 @@ def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=Non
             raise ValueError("必须且只能指定方案名称或方案ID中的一个")
     except ValueError as e:
         messagebox.showerror("错误", str(e))
+
+def copyShortcutSchemeConfig(newSchemeName, schemeName):
+    """复制快捷键方案配置文件"""
+    #校验在调用该函数的函数中做了
+    # 获取原方案配置
+    originalConfig = getShortcutSchemeConfigBySchemeName(schemeName)
+    if originalConfig is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    # 创建新配置
+    newConfig = originalConfig.copy()
+    newConfig["settings"]["name"] = newSchemeName
+    # newConfig["settings"]["description"] = originalConfig["settings"]["description"]
+    refresgCurrentNumberOfShortcutKeySchemes()
+    newConfig["settings"]["startupEnabled"] = False  # 新方案默认不启用
+    newConfig["settings"]["currentProfileId"] = currentNumberOfShortcutKeySchemes  # 新方案的ID为当前数量
+    saveShortcutSchemeConfig(newConfig, newSchemeName)
+
+
+def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
+    # 遍历查找 settings.name 匹配的文件再删除
+    if schemeName is not None and schemeId is None:
+        for file in configDirectory.glob("*.json"):
+            with open(file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("settings", {}).get("name") == schemeName:
+                file.unlink()
+                return
+        raise FileNotFoundError(f"快捷键方案 '{schemeName}' 的配置文件不存在")
+    elif schemeId is not None and schemeName is None:  # 按文件名删除
+        for file in configDirectory.glob("*.json"):
+            with open(file, "r", encoding="utf-8") as f:
+                config = json.load(f)
+            if config.get("settings", {}).get("currentProfileId") == schemeId:
+                file.unlink()  # 删除文件
+                return
+        raise FileNotFoundError(f"快捷键方案ID '{schemeId}' 的配置文件不存在")
+    else:
+        try:
+            if schemeName is not None and schemeId is not None:
+                raise ValueError("只能指定方案名称或方案ID中的一个，不能同时指定两个")
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))

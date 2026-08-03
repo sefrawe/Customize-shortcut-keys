@@ -1,12 +1,13 @@
 '''
 新建的快捷键方案
 '''
-from tkinter import messagebox
+from tkinter import messagebox, dialog
 
-from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description
+from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
+    copyShortcutSchemeConfig, deleteShortcutSchemeConfig
 
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
-    getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName
+    getShortcutSchemeConfigBySchemeName
 
 '''
 原先schemeName 混在 **kwargs 里被传给了 CTkFrame，而 CTkFrame 不认识它。导致启动报错。
@@ -28,8 +29,11 @@ self.contentFrame.grid_rowconfigure(0, weight=1)
 import customtkinter as ctk
 
 
+
+
+
 class NewShortcutSchemePage(ctk.CTkFrame):
-    def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None,**kwargs):
+    def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None,onCopied=None,ondeleted=None,**kwargs):
         #on*ed用于回调
         # ← 新增 on*ed 回调参数
         # ← schemeName 单独拎出来
@@ -37,9 +41,9 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.schemeName = schemeName  # 保存下来，后续页面内部可以用
         self.onRenamed = onRenamed  # 保存回调
         self.onStartupChanged = onStartupChanged
-
-        # 防抖计时器ID
-        self._save_after_id = None
+        self.onCopied = onCopied
+        self.onDeleted = ondeleted
+        self._save_after_id = None# 防抖计时器ID(用于自动保存快捷键方案备注)
 
         self.grid_columnconfigure(0, weight=1)# 让标题水平可伸缩
         self.grid_rowconfigure(0,weight=0)# 让标题垂直不可伸缩
@@ -65,6 +69,10 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         btnGroup.pack(side="right")
         renameButton = ctk.CTkButton(btnGroup, text="重命名", width=80, command=self.changeTheShortcutSchemeName)
         renameButton.pack(side="right", padx=5)
+        copyButton = ctk.CTkButton(btnGroup, text="复制", width=80, command=self.copyTheShortcutScheme)
+        copyButton.pack(side="right", padx=5)
+        deleteButton = ctk.CTkButton(btnGroup, text="删除", width=80, command=self.deleteTheShortcutScheme, text_color="yellow")
+        deleteButton.pack(side="right", padx=5)
         #todo 还要有删除与复制（改名但是不删）
         self.selectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
             btnGroup, values=["启用", "禁用"], command=self.changeShortcutSchemeEnabled
@@ -210,3 +218,33 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             # 加载完成后重置状态
             self.saveStatusVar.configure(text="已保存", text_color="green")
 
+    def copyTheShortcutScheme(self):
+        """复制当前快捷键方案"""
+        dialog = ctk.CTkInputDialog(text="输入新方案的名字（不可重复）", title="复制快捷键方案")
+        newSchemeName = dialog.get_input()  # ← 只读取，不覆盖
+        if newSchemeName is None or newSchemeName.strip() == "":
+            return
+        oldSchemeName = self.schemeName  # ← 先保存旧名字
+        try:
+            if newSchemeName in getShortcutSchemesNames(configDirectory):
+                raise ValueError(f"快捷键方案名称 '{newSchemeName}' 已存在，请更换名称")
+            try:
+                copyShortcutSchemeConfig(newSchemeName=newSchemeName, schemeName=oldSchemeName)
+            except FileNotFoundError as e:
+                messagebox.showerror("错误", f"复制快捷键方案失败: {e}, 请确保原方案的配置文件存在。")
+            if self.onCopied:
+                self.onCopied(oldSchemeName, newSchemeName)
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))
+
+    def deleteTheShortcutScheme(self):
+        """删除当前快捷键方案"""
+        confirm = messagebox.askyesno("确认删除", f"确定要删除快捷键方案 '{self.schemeName}' 吗？此操作不可撤销。")
+        if not confirm:
+            return
+        try:
+            deleteShortcutSchemeConfig(schemeName=self.schemeName)
+        except FileNotFoundError as e:
+            messagebox.showerror("错误", f"删除快捷键方案失败: {e}, 请确保方案的配置文件存在。")
+        if self.onDeleted:
+            self.onDeleted(self.schemeName)

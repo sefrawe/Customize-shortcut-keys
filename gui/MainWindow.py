@@ -32,8 +32,8 @@ class MainWindow(ctk.CTk):
 
         # 窗口基本设置
         self.title("自定义快捷键工具")
-        self.geometry("800x600")  # 初始窗口大小
-        self.minsize(600, 400)  # 窗口最小大小
+        self.geometry("1000x800")  # 初始窗口大小
+        self.minsize(800, 600)  # 窗口最小大小
 
         self._set_appearance_mode(appearanceMode)  # 可选: "light", "dark", "system"
 
@@ -134,6 +134,8 @@ class MainWindow(ctk.CTk):
             self.contentFrame,
             fg_color="transparent",
             schemeName=schemeName,
+            onCopied=self.handleSchemeCopied,
+            ondeleted=self.handleSchemeDeleted,
             onRenamed=self.handleSchemeRenamed,
             onStartupChanged=self.handleSchemeStartupChanged,
         )
@@ -205,7 +207,7 @@ class MainWindow(ctk.CTk):
         # 7. 重新创建方案按钮和页面
         self.createNavigationBarItemsBasedOnShortcutKeyScheme(getShortcutSchemes(configDirectory))
 
-    def handleSchemeRenamed(self, oldName, newName):
+    def handleSchemeRenamed(self, oldName, newName):#多出的参数删了就报错
         """改名成功后由子页面回调：刷新导航栏 + 跳转到新页面"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
         self.showPage(newName)  # 跳转到改名后的页面
@@ -216,3 +218,13 @@ class MainWindow(ctk.CTk):
             # 只刷新 NewShortcutSchemePage 类型的页面
             if isinstance(page, NewShortcutSchemePage):
                 page.refreshStartupDisplay()
+
+    def handleSchemeCopied(self, oldSchemeName,newSchemeName, ):#多出的参数删了就报错
+        """复制成功后由子页面回调：刷新导航栏 + 跳转到新页面"""
+        self.refreshSchemeButtons()  # 重建所有方案按钮和页面
+        self.showPage(oldSchemeName)  # 跳转被复制的页面
+
+    def handleSchemeDeleted(self, deletedSchemeName):#多出的参数删了就报错
+        """删除成功后由子页面回调：刷新导航栏 + 跳转到首页"""
+        self.refreshSchemeButtons()  # 重建所有方案按钮和页面
+        self.showPage("首页")  # 跳转到首页
