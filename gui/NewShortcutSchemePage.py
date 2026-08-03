@@ -1,13 +1,13 @@
 '''
 新建的快捷键方案
 '''
-from tkinter import messagebox, dialog
+from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
     copyShortcutSchemeConfig, deleteShortcutSchemeConfig
 
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
-    getShortcutSchemeConfigBySchemeName
+    getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName
 
 '''
 原先schemeName 混在 **kwargs 里被传给了 CTkFrame，而 CTkFrame 不认识它。导致启动报错。
@@ -27,10 +27,6 @@ self.contentFrame.grid_rowconfigure(0, weight=1)
 '''
 
 import customtkinter as ctk
-
-
-
-
 
 class NewShortcutSchemePage(ctk.CTkFrame):
     def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None,onCopied=None,ondeleted=None,**kwargs):
@@ -61,24 +57,25 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.descFrame = ctk.CTkFrame(self,height=200,fg_color="transparent")
         self.descFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
         #第三个框架用于放置快捷键列表
-        self.shortcutFrame = ctk.CTkFrame(self)
+        self.shortcutFrame = ctk.CTkScrollableFrame(self)
         self.shortcutFrame.grid(row=2, column=0, sticky="nsew", padx=10, pady=5)
 
         ctk.CTkLabel(self.headFrame, text=f"{schemeName}", font=("微软雅黑", 25)).pack(side="left")
         btnGroup = ctk.CTkFrame(self.headFrame)
         btnGroup.pack(side="right")
+        createNewShortcutButton = ctk.CTkButton(btnGroup, text="+ 新建快捷键", command=None)#todo:新建快捷键函数
+        createNewShortcutButton.pack(side='right', padx=10)
         renameButton = ctk.CTkButton(btnGroup, text="重命名", width=80, command=self.changeTheShortcutSchemeName)
         renameButton.pack(side="right", padx=5)
         copyButton = ctk.CTkButton(btnGroup, text="复制", width=80, command=self.copyTheShortcutScheme)
         copyButton.pack(side="right", padx=5)
-        deleteButton = ctk.CTkButton(btnGroup, text="删除", width=80, command=self.deleteTheShortcutScheme, text_color="yellow")
+        deleteButton = ctk.CTkButton(btnGroup, text="删除", width=80, command=self.deleteTheShortcutScheme,fg_color="#A30000", hover_color="#7A0000")
         deleteButton.pack(side="right", padx=5)
-        #todo 还要有删除与复制（改名但是不删）
+
         self.selectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
             btnGroup, values=["启用", "禁用"], command=self.changeShortcutSchemeEnabled
         )
         self.selectSegmentedButtonForStartup.pack(side="left", padx=5)
-
         try:
             startupSchemeName = getStartupEnabledShortcutScheme(configDirectory)["name"]
         except (KeyError, TypeError):
@@ -87,6 +84,8 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             self.headFrame,
             text=f"当前启用方案: {startupSchemeName}" if startupSchemeName else "当前启用方案: 无",
             font=("微软雅黑", 16),
+            # text_color="green"if startupSchemeName == self.schemeName else "orange",这个不行，切换页面颜色不变
+            #todo 如果当前方案是启用方案，显示绿色，否则显示橙色
             text_color="green",
             anchor="w"# 左对齐
         )
@@ -119,6 +118,70 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.descTextbox.bind("<KeyRelease>", self.onTextChange)
         # 初次加载数据
         self.loadDescription()
+
+        shortcuts = getShortcutBySchemeName(self.schemeName)
+        shortcuts.sort(key=lambda x: x.get("id", 0))
+
+        headInfoFrame = ctk.CTkLabel(self.shortcutFrame, text="冲突检查提示\n\n66", font=("微软雅黑", 14), bg_color="transparent")
+        headInfoFrame.pack(fill="x", pady=5, padx=5)#todo是否冲突提示（无冲突则显示没有冲突，有则提示移动到末尾查看具体冲突内容）
+
+        for item in shortcuts:
+            # 1. 单行卡片外框
+            rowFrame = ctk.CTkFrame(self.shortcutFrame, corner_radius=5)
+            rowFrame.pack(fill="x", pady=5, padx=5)
+            # 左侧信息区容器
+            infoFrame = ctk.CTkFrame(rowFrame)
+            infoFrame.pack(side="left", fill="x", expand=True, pady=5)
+            # 使用 grid 布局
+            infoFrame.grid_columnconfigure(0, weight=0, minsize=80)  # ID 列（最小宽度40）
+            infoFrame.grid_columnconfigure(1, weight=0, minsize=100)  # 名字列（最小宽度120）
+            infoFrame.grid_columnconfigure(2, weight=0, minsize=100)  # 案键列（最小宽度150）
+            infoFrame.grid_columnconfigure(3, weight=1)  # 备注列（可扩展）
+            # 1. ID
+            ctk.CTkLabel(infoFrame, text=str(item.get("id", ""))).grid(row=0, column=0, padx=(10, 5), sticky="w")
+            # 2. 名字
+            ctk.CTkLabel(infoFrame, text=item.get("name", "")).grid(row=0, column=1, padx=5, sticky="w")
+            # 3. 案键
+            ctk.CTkLabel(infoFrame, text=item.get("keyCombination", "")).grid(row=0, column=2, padx=5, sticky="w")
+            # 4. 备注
+            ctk.CTkLabel(infoFrame, text=item.get("description", "")).grid(row=0, column=3, padx=5, sticky="w")
+            # 右侧操作区容器 (靠右对齐)
+            actionFrame = ctk.CTkFrame(rowFrame, fg_color="transparent")
+            actionFrame.pack(side="right", padx=10, pady=5)
+            # 7. 删除按钮 (最右侧)
+            ctk.CTkButton(actionFrame, text="删除", width=50, fg_color="#A30000", hover_color="#7A0000").pack(
+                side="right", padx=(5, 0))
+            # 6. 编辑按钮
+            ctk.CTkButton(actionFrame, text="编辑", width=50).pack(side="right", padx=5)
+            # 5. 状态开关
+            shortcutsSelectSegmentedButtonForStartup= ctk.CTkSegmentedButton(
+                actionFrame, values=["启用", "禁用"], command=None
+            )
+            shortcutsSelectSegmentedButtonForStartup.pack(side="right", padx=5)
+            #todo:单个快捷键启用禁用
+
+        # self.selectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
+        #     btnGroup, values=["启用", "禁用"], command=self.changeShortcutSchemeEnabled
+        # )
+        # self.selectSegmentedButtonForStartup.pack(side="left", padx=5)
+        # try:
+        #     startupSchemeName = getStartupEnabledShortcutScheme(configDirectory)["name"]
+        # except (KeyError, TypeError):
+        #     startupSchemeName = None
+        # self.startupStatusLabel = ctk.CTkLabel(
+        #     self.headFrame,
+        #     text=f"当前启用方案: {startupSchemeName}" if startupSchemeName else "当前启用方案: 无",
+        #     font=("微软雅黑", 16),
+        #     text_color="green",
+        #     anchor="w"# 左对齐
+        # )
+        # self.startupStatusLabel.pack(fill="x", padx=20, pady=(0, 10),side="left")
+        # # 初始化分段按钮状态
+        # if startupSchemeName == self.schemeName:
+        #     self.selectSegmentedButtonForStartup.set("启用")
+        # else:
+        #     self.selectSegmentedButtonForStartup.set("禁用")
+
 
 
     def changeTheShortcutSchemeName(self):

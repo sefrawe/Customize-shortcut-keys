@@ -186,6 +186,11 @@ def getProfileInfoBySchemeName(schemeName):
         profileInfoList.append(profileInfo)
     return profileInfoList
 
+#todo应该有个页面刷新和数据刷新函数
+def refreshPage():
+    pass
+
+
 
 
 
