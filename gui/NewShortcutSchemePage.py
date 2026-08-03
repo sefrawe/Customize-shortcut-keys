@@ -4,10 +4,11 @@
 from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
-    copyShortcutSchemeConfig, deleteShortcutSchemeConfig
+    copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled
 
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
-    getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName
+    getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
+    getShortcutByShortcutId, getshortcut
 
 '''
 原先schemeName 混在 **kwargs 里被传给了 CTkFrame，而 CTkFrame 不认识它。导致启动报错。
@@ -84,9 +85,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             self.headFrame,
             text=f"当前启用方案: {startupSchemeName}" if startupSchemeName else "当前启用方案: 无",
             font=("微软雅黑", 16),
-            # text_color="green"if startupSchemeName == self.schemeName else "orange",这个不行，切换页面颜色不变
-            #todo 如果当前方案是启用方案，显示绿色，否则显示橙色
-            text_color="green",
+            text_color="green"if startupSchemeName == self.schemeName else "orange",#这个不行，切换页面颜色不变
             anchor="w"# 左对齐
         )
         self.startupStatusLabel.pack(fill="x", padx=20, pady=(0, 10),side="left")
@@ -121,6 +120,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
 
         shortcuts = getShortcutBySchemeName(self.schemeName)
         shortcuts.sort(key=lambda x: x.get("id", 0))
+        self.shortcutStartupButtons = {}
 
         headInfoFrame = ctk.CTkLabel(self.shortcutFrame, text="冲突检查提示\n\n66", font=("微软雅黑", 14), bg_color="transparent")
         headInfoFrame.pack(fill="x", pady=5, padx=5)#todo是否冲突提示（无冲突则显示没有冲突，有则提示移动到末尾查看具体冲突内容）
@@ -155,32 +155,16 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             ctk.CTkButton(actionFrame, text="编辑", width=50).pack(side="right", padx=5)
             # 5. 状态开关
             shortcutsSelectSegmentedButtonForStartup= ctk.CTkSegmentedButton(
-                actionFrame, values=["启用", "禁用"], command=None
+                actionFrame,
+                values=["启用", "禁用"],
+                command=lambda value, shortcutId=item.get("id"): self.changeShortcutEnabled(shortcutId, value)
             )
             shortcutsSelectSegmentedButtonForStartup.pack(side="right", padx=5)
-            #todo:单个快捷键启用禁用
+            shortcutId = item.get("id")
+            self.shortcutStartupButtons[shortcutId] = shortcutsSelectSegmentedButtonForStartup
+            shortcutsSelectSegmentedButtonForStartup.set("启用" if item.get("enabled", False) else "禁用")
 
-        # self.selectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
-        #     btnGroup, values=["启用", "禁用"], command=self.changeShortcutSchemeEnabled
-        # )
-        # self.selectSegmentedButtonForStartup.pack(side="left", padx=5)
-        # try:
-        #     startupSchemeName = getStartupEnabledShortcutScheme(configDirectory)["name"]
-        # except (KeyError, TypeError):
-        #     startupSchemeName = None
-        # self.startupStatusLabel = ctk.CTkLabel(
-        #     self.headFrame,
-        #     text=f"当前启用方案: {startupSchemeName}" if startupSchemeName else "当前启用方案: 无",
-        #     font=("微软雅黑", 16),
-        #     text_color="green",
-        #     anchor="w"# 左对齐
-        # )
-        # self.startupStatusLabel.pack(fill="x", padx=20, pady=(0, 10),side="left")
-        # # 初始化分段按钮状态
-        # if startupSchemeName == self.schemeName:
-        #     self.selectSegmentedButtonForStartup.set("启用")
-        # else:
-        #     self.selectSegmentedButtonForStartup.set("禁用")
+
 
 
 
@@ -221,12 +205,12 @@ class NewShortcutSchemePage(ctk.CTkFrame):
                 schemeName=self.schemeName
             )
         # 3) 刷新当前页面（分段按钮 + 状态 Label）
-        self.refreshStartupDisplay()
+        self.refreshSchemeStartupDisplay()
         # 4) 通知主窗口去刷新其它方案页面里同样的显示
         if self.onStartupChanged:
             self.onStartupChanged()
 
-    def refreshStartupDisplay(self):
+    def refreshSchemeStartupDisplay(self):
         """根据最新配置刷新本页面的分段按钮和状态 Label"""
         try:
             startupSchemeName = getStartupEnabledShortcutScheme(configDirectory)["name"]
@@ -240,8 +224,10 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         # 更新分段按钮选中态（避免触发 command 死循环）
         if startupSchemeName == self.schemeName:
             self.selectSegmentedButtonForStartup.set("启用")
+            self.startupStatusLabel.configure(text_color="green")
         else:
             self.selectSegmentedButtonForStartup.set("禁用")
+            self.startupStatusLabel.configure(text_color="orange")
 
     def onTextChange(self, event=None):
         """键盘释放时触发，防抖处理"""
@@ -311,3 +297,43 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             messagebox.showerror("错误", f"删除快捷键方案失败: {e}, 请确保方案的配置文件存在。")
         if self.onDeleted:
             self.onDeleted(self.schemeName)
+
+    def changeShortcutEnabled(self, shortcutId, status=None):
+        """切换单个快捷键的启用状态"""
+        shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
+        if shortcut is None:
+            messagebox.showerror("错误", f"未找到快捷键 ID {shortcutId} 的配置。")
+            return
+
+        shortcutOldStatus = getshortcut(shortcut).get("enabled", False)
+        shortcutNewStatus = (not shortcutOldStatus) if status is None else (status == "启用")
+        try:
+            changeShortcutConfig_enabled(self.schemeName, shortcutId, shortcutNewStatus)
+        except (FileNotFoundError, ValueError) as e:
+            messagebox.showerror("错误", f"切换快捷键启用状态失败: {e}")
+            return
+        self.refreshShortcutStartupDisplay(shortcutId)
+
+
+
+        # try:
+        #     startupShortcutNames = getStartupEnabledShortcutNameBySchemeName(self.schemeName)
+        # except (KeyError, TypeError):
+        #     startupShortcutNames = None
+        #
+        # for startupShortcutName in startupShortcutNames:
+        #     if startupShortcutName == item.get("name", ""):
+        #         # 判断条件是当前启用的快捷键名称是否与该快捷键的名称相同
+        #         shortcutsSelectSegmentedButtonForStartup.set("启用")
+        #     else:
+        #         shortcutsSelectSegmentedButtonForStartup.set("禁用")
+
+    def refreshShortcutStartupDisplay(self,shortcutId):
+        """刷新快捷键的启用状态显示"""
+        shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
+        if not shortcut:
+            return
+        button = self.shortcutStartupButtons.get(shortcutId)
+        if button is None:
+            return
+        button.set("启用" if shortcut.get("enabled", False) else "禁用")

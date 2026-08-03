@@ -162,41 +162,79 @@ def getShortcutBySchemeName(schemeName):
     return shortcuts
 
 
-def getProfileBySchemeName(schemeName):
-    """根据快捷键方案名获取对应的配置文件中的profiles列表"""
-    config = getShortcutSchemeConfigBySchemeName(schemeName)
-    if config is None:
-        return []
-    profiles = config.get("profiles", [])
-    return profiles
+# def getProfileBySchemeName(schemeName):
+#     """根据快捷键方案名获取对应的配置文件中的profiles列表"""
+#     config = getShortcutSchemeConfigBySchemeName(schemeName)
+#     if config is None:
+#         return []
+#     profiles = config.get("profiles", [])
+#     return profiles
+#
+# def getProfileInfoBySchemeName(schemeName):
+#     """根据快捷键方案名获取对应的配置文件中的profiles列表，并返回每个profile的基本信息"""
+#     profiles = getProfileBySchemeName(schemeName)
+#     profileInfoList = []
+#     for profile in profiles:
+#         profileInfo = {
+#             "id": profile.get("id", 0),
+#             "name": profile.get("name", ""),
+#             "description": profile.get("description", ""),
+#             "type": profile.get("type", ""),
+#             "readOnly": profile.get("readOnly", False),
+#             "shortcutsCount": len(profile.get("shortcuts", []))
+#         }
+#         profileInfoList.append(profileInfo)
+#     return profileInfoList
 
-def getProfileInfoBySchemeName(schemeName):
-    """根据快捷键方案名获取对应的配置文件中的profiles列表，并返回每个profile的基本信息"""
-    profiles = getProfileBySchemeName(schemeName)
-    profileInfoList = []
-    for profile in profiles:
-        profileInfo = {
-            "id": profile.get("id", 0),
-            "name": profile.get("name", ""),
-            "description": profile.get("description", ""),
-            "type": profile.get("type", ""),
-            "readOnly": profile.get("readOnly", False),
-            "shortcutsCount": len(profile.get("shortcuts", []))
-        }
-        profileInfoList.append(profileInfo)
-    return profileInfoList
+def getStartupEnabledShortcutBySchemeName(schemeName):
+    """根据方案名字获取被设置为启用状态的快捷键列表"""
+    shortcuts = getShortcutBySchemeName(schemeName)
+    enabledShortcuts = [s for s in shortcuts if s.get("enabled", False)]
+    return enabledShortcuts
 
-#todo应该有个页面刷新和数据刷新函数
-def refreshPage():
-    pass
+def getStartupEnabledShortcutNameBySchemeName(schemeName):
+    """根据方案名字获取被设置为启用状态的快捷键名称列表"""
+    enabledShortcuts = getStartupEnabledShortcutBySchemeName(schemeName)
+    enabledShortcutNames = [s.get("name", "") for s in enabledShortcuts]
+    return enabledShortcutNames
+
+
+
+def getShortcutByShortcutId(schemeName,shortcutId):
+    """根据快捷键方案名和快捷键ID获取对应的快捷键"""
+    shortcuts = getShortcutBySchemeName(schemeName)
+    for shortcut in shortcuts:
+        if shortcut.get("id") == shortcutId:
+            return shortcut
+    return None  # 如果没有找到对应的快捷键，返回 None
+
+def getshortcut(shortcut):
+    """根据快捷键获取对应的快捷键信息"""
+    if shortcut is None:
+        return {}
+    shortcutInfo = {
+        "id": shortcut.get("id", 0),
+        "name": shortcut.get("name", ""),
+        "description": shortcut.get("description", ""),
+        "enabled": shortcut.get("enabled", False),
+        "keyCombination": shortcut.get("keyCombination", ""),
+        "action": shortcut.get("action", "")
+    }
+    return shortcutInfo
+
+
 
 
 
 
 
 if __name__=="__main__":
-    print(getProfileInfoBySchemeName("方案1"))
-    print("\n")
-    print(getProfileBySchemeName("方案1"))
-    print("\n")
+    # print(getProfileInfoBySchemeName("方案1"))
+    # print("\n")
+    # print(getProfileBySchemeName("方案1"))
+    # print("\n")
     print(getShortcutBySchemeName("方案1"))
+    print("\n")
+    print(getStartupEnabledShortcutBySchemeName("方案1"))
+    print("\n")
+    print(getStartupEnabledShortcutNameBySchemeName("方案1"))

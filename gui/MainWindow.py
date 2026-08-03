@@ -217,7 +217,7 @@ class MainWindow(ctk.CTk):
         for name, page in self.pages.items():
             # 只刷新 NewShortcutSchemePage 类型的页面
             if isinstance(page, NewShortcutSchemePage):
-                page.refreshStartupDisplay()
+                page.refreshSchemeStartupDisplay()
 
     def handleSchemeCopied(self, oldSchemeName,newSchemeName, ):#多出的参数删了就报错
         """复制成功后由子页面回调：刷新导航栏 + 跳转到新页面"""

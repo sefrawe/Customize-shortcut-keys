@@ -299,3 +299,16 @@ def deleteShortcutSchemeConfig(schemeName=None, schemeId=None):
                 raise ValueError("只能指定方案名称或方案ID中的一个，不能同时指定两个")
         except ValueError as e:
             messagebox.showerror("错误", str(e))
+
+def changeShortcutConfig_enabled(schemeName, shortcutId,newStatus):
+    """切换快捷键的在配置中的启用状态"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    # 遍历快捷键列表，找到对应的快捷键并修改其 enabled 状态
+    for shortcut in config.get("shortcuts", []):
+        if shortcut.get("id") == shortcutId:
+            shortcut["enabled"] = newStatus
+            saveShortcutSchemeConfig(config, schemeName)
+            return
+    raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
