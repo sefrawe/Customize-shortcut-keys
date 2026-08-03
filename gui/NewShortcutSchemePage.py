@@ -4,7 +4,8 @@
 from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
-    copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled
+    copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, createNewShortcutSchemeConfig, \
+    addShortcut
 
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
     getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
@@ -64,7 +65,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         ctk.CTkLabel(self.headFrame, text=f"{schemeName}", font=("微软雅黑", 25)).pack(side="left")
         btnGroup = ctk.CTkFrame(self.headFrame)
         btnGroup.pack(side="right")
-        createNewShortcutButton = ctk.CTkButton(btnGroup, text="+ 新建快捷键", command=None)#todo:新建快捷键函数
+        createNewShortcutButton = ctk.CTkButton(btnGroup, text="+ 新建快捷键", command=self.openaddShortcutDialog)
         createNewShortcutButton.pack(side='right', padx=10)
         renameButton = ctk.CTkButton(btnGroup, text="重命名", width=80, command=self.changeTheShortcutSchemeName)
         renameButton.pack(side="right", padx=5)
@@ -118,51 +119,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         # 初次加载数据
         self.loadDescription()
 
-        shortcuts = getShortcutBySchemeName(self.schemeName)
-        shortcuts.sort(key=lambda x: x.get("id", 0))
-        self.shortcutStartupButtons = {}
-
-        headInfoFrame = ctk.CTkLabel(self.shortcutFrame, text="冲突检查提示\n\n66", font=("微软雅黑", 14), bg_color="transparent")
-        headInfoFrame.pack(fill="x", pady=5, padx=5)#todo是否冲突提示（无冲突则显示没有冲突，有则提示移动到末尾查看具体冲突内容）
-
-        for item in shortcuts:
-            # 1. 单行卡片外框
-            rowFrame = ctk.CTkFrame(self.shortcutFrame, corner_radius=5)
-            rowFrame.pack(fill="x", pady=5, padx=5)
-            # 左侧信息区容器
-            infoFrame = ctk.CTkFrame(rowFrame)
-            infoFrame.pack(side="left", fill="x", expand=True, pady=5)
-            # 使用 grid 布局
-            infoFrame.grid_columnconfigure(0, weight=0, minsize=80)  # ID 列（最小宽度40）
-            infoFrame.grid_columnconfigure(1, weight=0, minsize=100)  # 名字列（最小宽度120）
-            infoFrame.grid_columnconfigure(2, weight=0, minsize=100)  # 案键列（最小宽度150）
-            infoFrame.grid_columnconfigure(3, weight=1)  # 备注列（可扩展）
-            # 1. ID
-            ctk.CTkLabel(infoFrame, text=str(item.get("id", ""))).grid(row=0, column=0, padx=(10, 5), sticky="w")
-            # 2. 名字
-            ctk.CTkLabel(infoFrame, text=item.get("name", "")).grid(row=0, column=1, padx=5, sticky="w")
-            # 3. 案键
-            ctk.CTkLabel(infoFrame, text=item.get("keyCombination", "")).grid(row=0, column=2, padx=5, sticky="w")
-            # 4. 备注
-            ctk.CTkLabel(infoFrame, text=item.get("description", "")).grid(row=0, column=3, padx=5, sticky="w")
-            # 右侧操作区容器 (靠右对齐)
-            actionFrame = ctk.CTkFrame(rowFrame, fg_color="transparent")
-            actionFrame.pack(side="right", padx=10, pady=5)
-            # 7. 删除按钮 (最右侧)
-            ctk.CTkButton(actionFrame, text="删除", width=50, fg_color="#A30000", hover_color="#7A0000").pack(
-                side="right", padx=(5, 0))
-            # 6. 编辑按钮
-            ctk.CTkButton(actionFrame, text="编辑", width=50).pack(side="right", padx=5)
-            # 5. 状态开关
-            shortcutsSelectSegmentedButtonForStartup= ctk.CTkSegmentedButton(
-                actionFrame,
-                values=["启用", "禁用"],
-                command=lambda value, shortcutId=item.get("id"): self.changeShortcutEnabled(shortcutId, value)
-            )
-            shortcutsSelectSegmentedButtonForStartup.pack(side="right", padx=5)
-            shortcutId = item.get("id")
-            self.shortcutStartupButtons[shortcutId] = shortcutsSelectSegmentedButtonForStartup
-            shortcutsSelectSegmentedButtonForStartup.set("启用" if item.get("enabled", False) else "禁用")
+        self.renderShortcutList()
 
 
 
@@ -314,20 +271,6 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             return
         self.refreshShortcutStartupDisplay(shortcutId)
 
-
-
-        # try:
-        #     startupShortcutNames = getStartupEnabledShortcutNameBySchemeName(self.schemeName)
-        # except (KeyError, TypeError):
-        #     startupShortcutNames = None
-        #
-        # for startupShortcutName in startupShortcutNames:
-        #     if startupShortcutName == item.get("name", ""):
-        #         # 判断条件是当前启用的快捷键名称是否与该快捷键的名称相同
-        #         shortcutsSelectSegmentedButtonForStartup.set("启用")
-        #     else:
-        #         shortcutsSelectSegmentedButtonForStartup.set("禁用")
-
     def refreshShortcutStartupDisplay(self,shortcutId):
         """刷新快捷键的启用状态显示"""
         shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
@@ -337,3 +280,96 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         if button is None:
             return
         button.set("启用" if shortcut.get("enabled", False) else "禁用")
+
+    def openaddShortcutDialog(self):
+        """打开添加快捷键对话框"""
+        dialog = ctk.CTkInputDialog(text="请输入新的快捷键名称:", title="新建快捷键")
+        newName = dialog.get_input()  # ← 只调用一次，存起来
+        if newName is None or newName.strip() == "":  # ← 用变量判断
+            return
+        try:
+            addShortcut(self.schemeName, newName)
+            self.refreshShortcutList()
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))
+
+    def refreshShortcutList(self):
+        """刷新快捷键列表"""
+        # 清空现有的快捷键列表
+        for widget in self.shortcutFrame.winfo_children():
+            widget.destroy()
+        self.renderShortcutList()
+
+    def renderShortcutList(self):
+        """重建快捷键列表"""
+        # 重新加载快捷键列表
+        shortcuts = getShortcutBySchemeName(self.schemeName)
+        shortcuts.sort(key=self._shortcutSortKey)
+        self.shortcutStartupButtons = {}
+
+        # 顶部冲突提示区域
+        headInfoFrame = ctk.CTkLabel(
+            self.shortcutFrame,
+            text="冲突检查提示\n\n66",
+            font=("微软雅黑", 14),
+            bg_color="transparent"
+        )
+        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 按实际冲突检查结果替换提示文案
+
+        for item in shortcuts:
+            # 1. 单行卡片外框
+            rowFrame = ctk.CTkFrame(self.shortcutFrame, corner_radius=5)
+            rowFrame.pack(fill="x", pady=5, padx=5)
+
+            # 左侧信息区容器
+            infoFrame = ctk.CTkFrame(rowFrame)
+            infoFrame.pack(side="left", fill="x", expand=True, pady=5)
+            # 使用 grid 布局
+            infoFrame.grid_columnconfigure(0, weight=0, minsize=80)
+            infoFrame.grid_columnconfigure(1, weight=0, minsize=100)
+            infoFrame.grid_columnconfigure(2, weight=0, minsize=100)
+            infoFrame.grid_columnconfigure(3, weight=1)
+
+            # 1. ID
+            ctk.CTkLabel(infoFrame, text=str(item.get("id", ""))).grid(row=0, column=0, padx=(10, 5), sticky="w")
+            # 2. 名字
+            ctk.CTkLabel(infoFrame, text=item.get("name", "")).grid(row=0, column=1, padx=5, sticky="w")
+            # 3. 案键
+            ctk.CTkLabel(infoFrame, text=item.get("keyCombination", "")).grid(row=0, column=2, padx=5, sticky="w")
+            # 4. 备注
+            ctk.CTkLabel(infoFrame, text=item.get("description", "")).grid(row=0, column=3, padx=5, sticky="w")
+
+            # 右侧操作区容器（编辑/删除先保留入口，后续再补逻辑）
+            actionFrame = ctk.CTkFrame(rowFrame, fg_color="transparent")
+            actionFrame.pack(side="right", padx=10, pady=5)
+
+            # 7. 删除按钮（最右侧）
+            ctk.CTkButton(actionFrame, text="删除", width=50, fg_color="#A30000", hover_color="#7A0000").pack(
+                side="right", padx=(5, 0)
+            )
+            # 6. 编辑按钮
+            ctk.CTkButton(actionFrame, text="编辑", width=50).pack(side="right", padx=5)
+            # 5. 状态开关
+            shortcutsSelectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
+                actionFrame,
+                values=["启用", "禁用"],
+                command=lambda value, shortcutId=item.get("id"): self.changeShortcutEnabled(shortcutId, value)
+            )
+            shortcutsSelectSegmentedButtonForStartup.pack(side="right", padx=5)
+            shortcutId = item.get("id")
+            self.shortcutStartupButtons[shortcutId] = shortcutsSelectSegmentedButtonForStartup
+            shortcutsSelectSegmentedButtonForStartup.set("启用" if item.get("enabled", False) else "禁用")
+
+    @staticmethod
+    def _shortcutSortKey(shortcut):
+        shortcutId = shortcut.get("id", 0)
+        if isinstance(shortcutId, int):
+            return (0, shortcutId)
+        if isinstance(shortcutId, str):
+            if shortcutId.isdigit():
+                return (0, int(shortcutId))
+            suffix = shortcutId.rsplit("_", 1)[-1]
+            if suffix.isdigit():
+                return (0, int(suffix))
+            return (1, shortcutId)
+        return (2, str(shortcutId))

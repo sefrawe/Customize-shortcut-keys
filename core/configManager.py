@@ -1,5 +1,6 @@
 '''配置文件和项目路径管理'''
 import json
+import re
 from pathlib import Path
 from tkinter import messagebox
 
@@ -312,3 +313,32 @@ def changeShortcutConfig_enabled(schemeName, shortcutId,newStatus):
             saveShortcutSchemeConfig(config, schemeName)
             return
     raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
+
+def addShortcut(schemeName, shortcutName):
+    """添加新的快捷键"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    # 获取现有快捷键的最大ID
+    existingIds = []
+    for shortcut in config.get("shortcuts", []):
+        shortcutId = shortcut.get("id")
+        if isinstance(shortcutId, int):
+            existingIds.append(shortcutId)
+        elif isinstance(shortcutId, str):
+            match = re.search(r"(\d+)$", shortcutId)
+            if match:
+                existingIds.append(int(match.group(1)))
+    nextId = max(existingIds, default=-1) + 1
+    # 创建新的快捷键
+    newShortcut = {
+        "id": nextId,
+        "name": shortcutName,
+        "description": "这是注释",
+        "keyCombination": "ctrl+alt+shift",
+        "action": "",
+        "actionParams": {},
+        "enabled": False
+    }
+    config.get("shortcuts", []).append(newShortcut)
+    saveShortcutSchemeConfig(config, schemeName)
