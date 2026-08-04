@@ -11,7 +11,7 @@ class SettingsPage(ctk.CTkFrame):
         super().__init__(master, **kwargs)# 初始化父类
         # 创建主题选择分段按钮
         self.themeLabel = ctk.CTkLabel(self, text="主题设置", font=("微软雅黑", 24))
-        self.themeLabel.pack(pady=20)
+        self.themeLabel.pack(pady=20,)
 
         self.themeSeg = ctk.CTkSegmentedButton(# 创建主题选择分段按钮
             self,

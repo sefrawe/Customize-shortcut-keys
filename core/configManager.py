@@ -336,7 +336,7 @@ def addShortcut(schemeName, shortcutName):
     newShortcut = {
         "id": nextId,
         "name": shortcutName,
-        "description": "这是注释",
+        "description": "这是备注",
         "keyCombination": "ctrl+alt+shift",
         "action": "",
         "actionParams": {},
@@ -369,3 +369,22 @@ def resignShortcutIds(schemeName):
     for index, shortcut in enumerate(shortcuts):
         shortcut["id"] = index
     saveShortcutSchemeConfig(config, schemeName)
+
+def copyShortcut(schemeName, oldShortcutId, newShortcutName):
+    """复制指定快捷键"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    # 遍历快捷键列表，找到对应的快捷键并复制
+    for shortcut in config.get("shortcuts", []):
+        if shortcut.get("id") == oldShortcutId:
+            newShortcut = shortcut.copy()
+            # 获取现有快捷键的最大ID
+            existingIds = [s.get("id") for s in config.get("shortcuts", []) if isinstance(s.get("id"), int)]
+            nextId = max(existingIds, default=-1) + 1
+            newShortcut["id"] = nextId
+            newShortcut["name"] = newShortcutName
+            config.get("shortcuts", []).append(newShortcut)
+            saveShortcutSchemeConfig(config, schemeName)
+            return
+    raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{oldShortcutId}' 的快捷键")

@@ -5,7 +5,7 @@ from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
     copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, createNewShortcutSchemeConfig, \
-    addShortcut, deleteShortcut, resignShortcutIds
+    addShortcut, deleteShortcut, resignShortcutIds, copyShortcut
 
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
     getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
@@ -351,6 +351,10 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             .pack(
                 side="right", padx=(5, 0)
             ))
+            # 8.复制按钮
+            ctk.CTkButton(actionFrame, text="复制", width=50,
+                          command=lambda shortcutId=item.get("id"): self.copyShortcut(shortcutId)
+                          ).pack(side="right", padx=5)
             # 6. 编辑按钮
             ctk.CTkButton(actionFrame, text="编辑", width=50,
                           command=None  # todo 要弹出个自定义窗口，还要查询回显，后端逻辑未定难以实现
@@ -366,6 +370,8 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             shortcutId = item.get("id")
             self.shortcutStartupButtons[shortcutId] = shortcutsSelectSegmentedButtonForStartup
             shortcutsSelectSegmentedButtonForStartup.set("启用" if item.get("enabled", False) else "禁用")
+
+
 
     @staticmethod
     def _shortcutSortKey(shortcut):
@@ -394,3 +400,17 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             self.refreshShortcutList()
         except FileNotFoundError as e:
             messagebox.showerror("错误", f"删除快捷键失败: {e}, 请确保方案的配置文件存在和完整。")
+
+    def copyShortcut(self, shortcutId):
+        """复制单个快捷键"""
+        shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
+        if not shortcut:
+            messagebox.showerror("错误", f"未找到快捷键 ID {shortcutId} 的配置。")
+            return
+        newName = f"{shortcut.get('name', '')}_副本"
+        try:
+            copyShortcut(self.schemeName,oldShortcutId=shortcutId, newShortcutName=newName)
+            resignShortcutIds(schemeName=self.schemeName)
+            self.refreshShortcutList()
+        except ValueError as e:
+            messagebox.showerror("错误", str(e))
