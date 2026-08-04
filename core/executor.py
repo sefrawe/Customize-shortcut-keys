@@ -1,6 +1,27 @@
 '''
 动作执行器
 '''
+'''
+【快捷键匹配核心逻辑说明】
+为了区分键盘上的重复物理键（如左/右 Ctrl、Shift、Alt，主键盘数字与右侧小键盘数字），
+同时保持原有基于字符串配置的向后兼容性，本模块采用了“统称与特称智能匹配”策略，
+无需将配置文件结构重构为复杂的 JSON 对象。
+
+1. 标准化不再合并：
+   - _normalizeAlias: 只做等价拼写转换（如 control -> ctrl），不再将 ctrl_l/ctrl_r 强行合并为 ctrl。
+   - _normalizeSingleKey: 利用虚拟键码(VK Code)区分主键盘数字(vk 48-57 返回 '1') 
+     和小键盘数字(vk 96-105 返回 'numpad_1')。
+
+2. 智能匹配机制：
+   - _is_key_match / _isCombinationMatch: 
+     如果配置写统称(如 'ctrl')，则允许监听到的具体特称(如 'ctrl_l' 或 'ctrl_r')匹配成功；
+     如果配置写特称(如 'ctrl_l')，则只有按下左 Ctrl 才能匹配成功。
+     数字键不互通（'1' 与 'numpad_1' 视为完全不同的键）。
+
+3. 动作模拟适配：
+   - _doPasteText: 为防止用户按住的是右 Ctrl 而代码只释放了通用 Ctrl，统一释放所有修饰键的左右变体。
+'''
+
 import re
 from collections.abc import Callable
 
@@ -49,9 +70,9 @@ class Executor:
         # 启动前先刷新一次，确保读取的是最新配置
         self.refresh()
         if self.activeScheme is None:
-            self.showTip("没有被设置为启动启用状态的快捷键方案，键盘监听器未启动。")
+            # self.showTip("没有被设置为启动启用状态的快捷键方案，键盘监听器未启动。")
             return None
-        self.showTip(f"启动键盘监听器，监听快捷键方案: {self.activeScheme['name']}")
+        # self.showTip(f"启动键盘监听器，监听快捷键方案: {self.activeScheme['name']}")
         self.isListening = True
         return self.listener.start()
 
@@ -142,43 +163,58 @@ class Executor:
         """把单个按键对象统一成字符串。"""
         if key is None:
             return None
-        # 特殊键（如 Key.ctrl、Key.alt）
+        # 特殊键（如 Key.ctrl_l、Key.ctrl_r）
         if hasattr(key, "name"):
             return self._normalizeAlias(key.name.lower())
         # 普通字符键（如 KeyCode）
         keyName = getattr(key, "char", None)
         if keyName:
             return keyName.lower()
-        # ★ 关键修复：char 为 None 时，用 vk 虚拟键码还原
+        # char 为 None 时，用 vk 虚拟键码还原
         vk = getattr(key, "vk", None)
         if vk is not None:
-            # 数字键 0-9（vk 码 48-57）
+            # 主键盘数字键 0-9（vk 48-57）
             if 48 <= vk <= 57:
                 return chr(vk)
-            # 字母键 A-Z（vk 码 65-90）
+            # 字母键 A-Z（vk 65-90）
             if 65 <= vk <= 90:
                 return chr(vk).lower()
+            # ★ 新增：小键盘数字键 0-9（vk 96-105）
+            if 96 <= vk <= 105:
+                return f"numpad_{chr(vk - 48)}"
         return None
 
     def _normalizeAlias(self, keyName):
-        """把不同写法统一成同一种名称，避免配置和监听值对不上。"""
+        """统一等价别名，但不再合并左右修饰键。"""
         aliasMap = {
-            "ctrl_l": "ctrl",
-            "ctrl_r": "ctrl",
-            "control_l": "ctrl",
-            "control_r": "ctrl",
-            "shift_l": "shift",
-            "shift_r": "shift",
-            "alt_l": "alt",
-            "alt_r": "alt",
-            "cmd": "cmd",
+            "control": "ctrl",
+            "control_l": "ctrl_l",
+            "control_r": "ctrl_r",
+            "option": "alt",
+            "option_l": "alt_l",
+            "option_r": "alt_r",
             "command": "cmd",
             "windows": "cmd",
-            "option": "alt",
         }
-        if keyName in aliasMap:
-            return aliasMap[keyName]
-        return keyName
+        return aliasMap.get(keyName, keyName)
+
+    # 类变量：统称 → 可匹配的特称集合
+    _KEY_SUPERSET = {
+        "ctrl": {"ctrl_l", "ctrl_r"},
+        "shift": {"shift_l", "shift_r"},
+        "alt": {"alt_l", "alt_r"},
+        "cmd": {"cmd_l", "cmd_r"},
+    }
+
+    def _is_key_match(self, config_key, pressed_key):
+        """检查配置中的按键是否能匹配监听到的按键（支持统称匹配特称）。"""
+        # 1. 完全相等（特称匹配特称，或普通键匹配普通键）
+        if config_key == pressed_key:
+            return True
+        # 2. 统称匹配特称：配置写 ctrl，允许 ctrl_l/ctrl_r
+        if config_key in self._KEY_SUPERSET:
+            return pressed_key in self._KEY_SUPERSET[config_key]
+        return False
 
     def _parseKeyCombination(self, keyCombination):
         """把配置里的组合键字符串拆成集合。"""
@@ -194,8 +230,8 @@ class Executor:
         return normalized
 
     def _findMatchedShortcut(self, pressedKeyNames):
-        """找出当前按键集合匹配的快捷键。"""
-        matchedShortcut: dict | None = None
+        """找出当前按键集合匹配的快捷键（支持统称/特称智能匹配）。"""
+        matchedShortcut = None
         matchedLength = -1
         for shortcut in self.activeShortcuts:
             if not shortcut.get("enabled", False):
@@ -203,11 +239,29 @@ class Executor:
             shortcutKeys = self._parseKeyCombination(shortcut.get("keyCombination", ""))
             if not shortcutKeys:
                 continue
-            # 必须完全一致才算触发，避免半套按键误触发
-            if shortcutKeys == pressedKeyNames and len(shortcutKeys) > matchedLength:
+            # 数量不一致直接跳过
+            if len(shortcutKeys) != len(pressedKeyNames):
+                continue
+            # 用智能匹配替代严格相等
+            if self._isCombinationMatch(shortcutKeys, pressedKeyNames) and len(shortcutKeys) > matchedLength:
                 matchedShortcut = shortcut
                 matchedLength = len(shortcutKeys)
         return matchedShortcut
+
+    def _isCombinationMatch(self, configKeys, pressedKeyNames):
+        """检查配置按键集合与监听按键集合是否匹配（支持统称匹配特称）。"""
+        pressedList = list(pressedKeyNames)
+        used = [False] * len(pressedList)
+        for cKey in configKeys:
+            found = False
+            for i, pKey in enumerate(pressedList):
+                if not used[i] and self._is_key_match(cKey, pKey):
+                    used[i] = True
+                    found = True
+                    break
+            if not found:
+                return False
+        return True
 
     def _executeShortcut(self, shortcut: dict):
         """动作分发器：根据 action 类型派发到具体的执行方法。"""
@@ -251,9 +305,13 @@ class Executor:
         # 2. 释放可能还按着的修饰键，否则会变成 Ctrl+Alt+V
         import time
         kb = keyboard.Controller()
-        kb.release(keyboard.Key.ctrl)
-        kb.release(keyboard.Key.alt)
-        kb.release(keyboard.Key.shift)
+        kb.release(keyboard.Key.ctrl_l)
+        kb.release(keyboard.Key.ctrl_r)
+        kb.release(keyboard.Key.alt_l)
+        kb.release(keyboard.Key.alt_r)
+        kb.release(keyboard.Key.shift_l)
+        kb.release(keyboard.Key.shift_r)
+
         time.sleep(0.05)  # 给系统一点时间处理释放事件
 
         # 3. 模拟按下 Ctrl+V 粘贴

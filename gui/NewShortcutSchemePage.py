@@ -322,7 +322,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             font=("微软雅黑", 14),
             bg_color="transparent"
         )
-        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 和冲突检查功能一起最后做，按实际冲突检查结果替换提示文案。还有变更快捷键设置后要重新检查冲突并刷新提示文案
+        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 和冲突检查功能（可以开关）一起最后做，按实际冲突检查结果替换提示文案。还有变更快捷键设置后要重新检查冲突并刷新提示文案
 
         for item in shortcuts:
             # 1. 单行卡片外框
