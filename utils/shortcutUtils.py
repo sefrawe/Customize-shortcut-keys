@@ -119,6 +119,8 @@ def getStartupEnabledShortcutScheme(folderPath):
 
 
 def getShortcutSchemeConfigBySchemeName(schemeName):
+    # 根据快捷键方案名获取对应的配置文件内容
+
     for file in configDirectory.glob("*.json"):
         with open(file, "r", encoding="utf-8") as f:
             config = json.load(f)
@@ -161,30 +163,6 @@ def getShortcutBySchemeName(schemeName):
     shortcuts = config.get("shortcuts", [])
     return shortcuts
 
-
-# def getProfileBySchemeName(schemeName):
-#     """根据快捷键方案名获取对应的配置文件中的profiles列表"""
-#     config = getShortcutSchemeConfigBySchemeName(schemeName)
-#     if config is None:
-#         return []
-#     profiles = config.get("profiles", [])
-#     return profiles
-#
-# def getProfileInfoBySchemeName(schemeName):
-#     """根据快捷键方案名获取对应的配置文件中的profiles列表，并返回每个profile的基本信息"""
-#     profiles = getProfileBySchemeName(schemeName)
-#     profileInfoList = []
-#     for profile in profiles:
-#         profileInfo = {
-#             "id": profile.get("id", 0),
-#             "name": profile.get("name", ""),
-#             "description": profile.get("description", ""),
-#             "type": profile.get("type", ""),
-#             "readOnly": profile.get("readOnly", False),
-#             "shortcutsCount": len(profile.get("shortcuts", []))
-#         }
-#         profileInfoList.append(profileInfo)
-#     return profileInfoList
 
 def getStartupEnabledShortcutBySchemeName(schemeName):
     """根据方案名字获取被设置为启用状态的快捷键列表"""

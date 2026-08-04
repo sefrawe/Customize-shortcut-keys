@@ -229,13 +229,13 @@ def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=Non
             changeShortcutSchemeConfig_StartupEnabled(name=effectiveName,
                                                       newStartupEnabled=newStartupEnabled)  # ★ 用 effectiveName
     if schemeId is not None and schemeName is None:
-        effectiveName = None  # 需要先查出当前名字
+        effectiveName = None  # 需要先查出当前名字#?疑似没有用
         if newSchemeName is not None and newSchemeName.strip() != "":
             # 改名前先查出当前名字
             config = getShortcutSchemeConfigById(schemeId)
             if config is None:
                 raise FileNotFoundError(f"找不到方案ID '{schemeId}' 的配置文件")
-            oldName = config["settings"]["name"]
+            oldName = config["settings"]["name"]#?疑似没有用
             changeShortcutSchemeConfig_Name(newName=newSchemeName, schemeId=schemeId)
             effectiveName = newSchemeName
         else:

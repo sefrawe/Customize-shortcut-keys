@@ -27,8 +27,9 @@ appearanceMode = globalSettings["appearanceMode"]
 class MainWindow(ctk.CTk):
     """程序主窗口类，继承自CustomTkinter的CTk主窗口"""
 
-    def __init__(self):
+    def __init__(self, executor=None):
         super().__init__()
+        self.executor = executor
 
         # 窗口基本设置
         self.title("自定义快捷键工具")
@@ -140,6 +141,7 @@ class MainWindow(ctk.CTk):
             ondeleted=self.handleSchemeDeleted,
             onRenamed=self.handleSchemeRenamed,
             onStartupChanged=self.handleSchemeStartupChanged,
+            onExecutorRefresh=self.refreshExecutor,
         )
         self.pages[schemeName] = newPage
 
@@ -152,6 +154,7 @@ class MainWindow(ctk.CTk):
             newConfig = createNewShortcutSchemeConfig(newName)
             saveShortcutSchemeConfig(newConfig, newName)
             self.refreshSchemeButtons()
+            self.refreshExecutor()
             self.showPage(newName)
         except ValueError as e:
             messagebox.showerror("错误", str(e))
@@ -213,6 +216,7 @@ class MainWindow(ctk.CTk):
     def handleSchemeRenamed(self, oldName, newName):  # 多出的参数删了就报错
         """改名成功后由子页面回调：刷新导航栏 + 跳转到新页面"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
+        self.refreshExecutor()
         self.showPage(newName)  # 跳转到改名后的页面
 
     def handleSchemeStartupChanged(self):
@@ -221,13 +225,25 @@ class MainWindow(ctk.CTk):
             # 只刷新 NewShortcutSchemePage 类型的页面
             if isinstance(page, NewShortcutSchemePage):
                 page.refreshSchemeStartupDisplay()
+        self.refreshExecutor()
 
     def handleSchemeCopied(self, oldSchemeName, newSchemeName, ):  # 多出的参数删了就报错
         """复制成功后由子页面回调：刷新导航栏 + 跳转到新页面"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
+        self.refreshExecutor()
         self.showPage(oldSchemeName)  # 跳转被复制的页面
 
     def handleSchemeDeleted(self, deletedSchemeName):  # 多出的参数删了就报错
         """删除成功后由子页面回调：刷新导航栏 + 跳转到首页"""
         self.refreshSchemeButtons()  # 重建所有方案按钮和页面
+        self.refreshExecutor()
         self.showPage("首页")  # 跳转到首页
+
+    def refreshExecutor(self):
+        # 方案或快捷键变更后，先刷新执行器再决定要不要保持监听
+        if self.executor:
+            self.executor.sync()
+
+    def showExecutorTip(self, title, text):
+        """给执行器用的提示窗口回调。"""
+        self.after(0, lambda: messagebox.showinfo(title, text))

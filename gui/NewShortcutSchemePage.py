@@ -4,7 +4,7 @@
 from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
-    copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, createNewShortcutSchemeConfig, \
+    copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, \
     addShortcut, deleteShortcut, resignShortcutIds, copyShortcut
 
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
@@ -33,7 +33,7 @@ import customtkinter as ctk
 
 class NewShortcutSchemePage(ctk.CTkFrame):
     def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None, onCopied=None, ondeleted=None,
-                 **kwargs):
+                 onExecutorRefresh=None, **kwargs):
         # on*ed用于回调
         # ← 新增 on*ed 回调参数
         # ← schemeName 单独拎出来
@@ -43,6 +43,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.onStartupChanged = onStartupChanged
         self.onCopied = onCopied
         self.onDeleted = ondeleted
+        self.onExecutorRefresh = onExecutorRefresh
         self._save_after_id = None  # 防抖计时器ID(用于自动保存快捷键方案备注)
 
         self.grid_columnconfigure(0, weight=1)  # 让标题水平可伸缩
@@ -136,6 +137,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
                 raise ValueError(f"快捷键方案名称 '{newName}' 已存在，请更换名称")
             changeShortcutSchemeConfig(newSchemeName=newName, schemeName=oldName)
             self.schemeName = newName  # ← 改名成功后才更新
+            self._refreshExecutor()
             if self.onRenamed:
                 self.onRenamed(oldName, newName)
         except ValueError as e:
@@ -163,6 +165,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             )
         # 3) 刷新当前页面（分段按钮 + 状态 Label）
         self.refreshSchemeStartupDisplay()
+        self._refreshExecutor()
         # 4) 通知主窗口去刷新其它方案页面里同样的显示
         if self.onStartupChanged:
             self.onStartupChanged()
@@ -209,6 +212,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             changeShortcutSchemeConfig_Description(newDescription=newDescription, name=self.schemeName)
             # 保存成功，恢复状态
             self.saveStatusVar.configure(text="已自动保存", text_color="green")
+            self._refreshExecutor()
         except Exception as e:
             self.saveStatusVar.configure(text="保存失败", text_color="red")
             messagebox.showerror("错误", f"备注保存失败: {e}")
@@ -238,6 +242,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
                 copyShortcutSchemeConfig(newSchemeName=newSchemeName, schemeName=oldSchemeName)
             except FileNotFoundError as e:
                 messagebox.showerror("错误", f"复制快捷键方案失败: {e}, 请确保原方案的配置文件存在。")
+            self._refreshExecutor()
             if self.onCopied:
                 self.onCopied(oldSchemeName, newSchemeName)
         except ValueError as e:
@@ -252,6 +257,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             deleteShortcutSchemeConfig(schemeName=self.schemeName)
         except FileNotFoundError as e:
             messagebox.showerror("错误", f"删除快捷键方案失败: {e}, 请确保方案的配置文件存在。")
+        self._refreshExecutor()
         if self.onDeleted:
             self.onDeleted(self.schemeName)
 
@@ -270,6 +276,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             messagebox.showerror("错误", f"切换快捷键启用状态失败: {e}")
             return
         self.refreshShortcutStartupDisplay(shortcutId)
+        self._refreshExecutor()
 
     def refreshShortcutStartupDisplay(self, shortcutId):
         """刷新快捷键的启用状态显示"""
@@ -290,6 +297,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         try:
             addShortcut(self.schemeName, newName)
             self.refreshShortcutList()
+            self._refreshExecutor()
         except ValueError as e:
             messagebox.showerror("错误", str(e))
 
@@ -314,7 +322,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             font=("微软雅黑", 14),
             bg_color="transparent"
         )
-        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 和冲突检查功能一起最后做，按实际冲突检查结果替换提示文案
+        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 和冲突检查功能一起最后做，按实际冲突检查结果替换提示文案。还有变更快捷键设置后要重新检查冲突并刷新提示文案
 
         for item in shortcuts:
             # 1. 单行卡片外框
@@ -398,6 +406,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             # id重新分配后，刷新整个列表
             resignShortcutIds(schemeName=self.schemeName)
             self.refreshShortcutList()
+            self._refreshExecutor()
         except FileNotFoundError as e:
             messagebox.showerror("错误", f"删除快捷键失败: {e}, 请确保方案的配置文件存在和完整。")
 
@@ -412,5 +421,10 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             copyShortcut(self.schemeName,oldShortcutId=shortcutId, newShortcutName=newName)
             resignShortcutIds(schemeName=self.schemeName)
             self.refreshShortcutList()
+            self._refreshExecutor()
         except ValueError as e:
             messagebox.showerror("错误", str(e))
+
+    def _refreshExecutor(self):
+        if self.onExecutorRefresh:
+            self.onExecutorRefresh()
