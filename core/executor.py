@@ -4,15 +4,17 @@
 import re
 from collections.abc import Callable
 
+from pynput import keyboard
+
 from core.listener import KeyboardListener
 from core.configManager import configDirectory
 from utils.shortcutUtils import getShortcutBySchemeName, getStartupEnabledShortcutScheme
-
+import win32clipboard as wc
 
 class Executor:
     """动作执行器：负责组装监听器并接收监听结果。"""
 
-    def __init__(self):
+    def __init__(self):#self指的是当前实例
         # 提示回调由主窗口注入，避免执行器直接依赖 GUI 组件
         self.tipCallback: Callable[[str, str], None] | None = None#定义一个可选的回调函数，用于显示提示信息。如果未设置回调函数，则使用默认的控制台输出方式。
         self.activeScheme: dict | None = None#定义一个可选的字典，用于存储当前启用的快捷键方案。如果没有启用的方案，则为 None。
@@ -208,14 +210,64 @@ class Executor:
         return matchedShortcut
 
     def _executeShortcut(self, shortcut: dict):
-        """执行匹配到的快捷键。当前先给出提示，后续可以在这里接真实动作分发。"""
+        """动作分发器：根据 action 类型派发到具体的执行方法。"""
         shortcutName = shortcut.get("name", "")
-        shortcutAction = shortcut.get("action", "")
-        shortcutParams = shortcut.get("actionParams", {})
-        self.showTip(
-            f"已触发快捷键: {shortcutName}\n"
-            f"组合: {shortcut.get('keyCombination', '')}\n"
-            f"动作: {shortcutAction or '无'}\n"
-            f"参数: {shortcutParams}",
-            title="快捷键触发"
-        )
+        action = shortcut.get("action", "")
+        actionParams = shortcut.get("actionParams", {})
+
+        if not action:
+            self.showTip(f"快捷键 '{shortcutName}' 没有配置动作。")
+            return
+
+        # 建立动作映射表 (策略模式)
+        actionMap = {
+            "pasteText": self._doPasteText,
+            "systemCommand": self._doSystemCommand,
+            "openPath": self._doOpenPath,
+        }
+
+        targetAction = actionMap.get(action)
+        if targetAction is None:
+            self.showTip(f"未知的动作类型: {action}", title="执行错误")
+            return
+
+        try:
+            targetAction(actionParams)
+        except Exception as e:
+            self.showTip(f"执行动作 '{action}' 失败:\n{str(e)}", title="执行错误")
+
+    def _doPasteText(self, params):
+        """动作：模拟粘贴文本"""
+        text = params.get("text", "")
+        if not text:
+            return
+
+        # 1. 将文本复制到剪贴板 (使用 pywin32)
+        wc.OpenClipboard()
+        wc.EmptyClipboard()
+        wc.SetClipboardData(wc.CF_UNICODETEXT, text)
+        wc.CloseClipboard()
+
+        # 2. 释放可能还按着的修饰键，否则会变成 Ctrl+Alt+V
+        import time
+        kb = keyboard.Controller()
+        kb.release(keyboard.Key.ctrl)
+        kb.release(keyboard.Key.alt)
+        kb.release(keyboard.Key.shift)
+        time.sleep(0.05)  # 给系统一点时间处理释放事件
+
+        # 3. 模拟按下 Ctrl+V 粘贴
+        with kb.pressed(keyboard.Key.ctrl):
+            kb.press('v')
+            kb.release('v')
+
+    def _doSystemCommand(self, params):
+        """动作：执行系统命令"""
+        print("准备执行系统命令，参数:", params)
+        pass
+
+    def _doOpenPath(self, params):
+        """动作：打开程序/文件"""
+        print("准备打开路径，参数:", params)
+        pass
+
