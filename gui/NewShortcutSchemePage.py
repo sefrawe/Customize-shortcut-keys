@@ -6,7 +6,7 @@ from tkinter import messagebox
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
     copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, \
     addShortcut, deleteShortcut, resignShortcutIds, copyShortcut
-
+from gui.ShortcutEditWindow import ShortcutEditWindow
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
     getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
     getShortcutByShortcutId, getshortcut
@@ -365,7 +365,8 @@ class NewShortcutSchemePage(ctk.CTkFrame):
                           ).pack(side="right", padx=5)
             # 6. 编辑按钮
             ctk.CTkButton(actionFrame, text="编辑", width=50,
-                          command=None  # todo 要弹出个自定义窗口，还要查询回显，后端逻辑未定难以实现
+                          command=lambda shortcutId=item.get("id"): self.editShortcut(shortcutId)
+                          # todo 要弹出个自定义窗口，还要查询回显
                           ).pack(side="right", padx=5)
             # 5. 状态开关
             shortcutsSelectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
@@ -428,3 +429,35 @@ class NewShortcutSchemePage(ctk.CTkFrame):
     def _refreshExecutor(self):
         if self.onExecutorRefresh:
             self.onExecutorRefresh()
+
+    def editShortcut(self, shortcutId):
+        """编辑单个快捷键"""
+        self.openEditShortcutWindow(shortcutId)
+        pass
+
+    def openEditShortcutWindow(self, shortcutId):
+        """打开编辑快捷键的窗口"""
+        shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
+        if not shortcut:
+            messagebox.showerror("错误", f"未找到快捷键 ID {shortcutId} 的配置。")
+            return
+
+        editWindow = ShortcutEditWindow(self, shortcut)
+        #将焦点设置到新窗口上
+        editWindow.grab_set()
+        #等待新窗口关闭后再继续执行
+        self.wait_window(editWindow)
+
+
+        # # 右侧内容区父容器
+        # self.contentFrame = ctk.CTkFrame(self, fg_color="transparent")  # 定义内容区框架，设置背景颜色为透明
+        # self.contentFrame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)  # 将内容区放置在右侧，填充整个高度和宽度，并设置内边距为10像素
+        # self.contentFrame.grid_rowconfigure(0, weight=1)  # 让内容区垂直可伸缩
+        # self.contentFrame.grid_columnconfigure(0, weight=1)  # 让内容区水平可伸缩
+        # self.pages = {}
+        # self.pages["首页"] = HomePage(self.contentFrame, fg_color="transparent")
+        # # 创建一个首页对象，并存储在self.pages字典中，键为"首页"，值为HomePage对象。第一个参数self.contentFrame表示将页面放置在内容区父容器中，第二个参数fg_color="transparent"表示设置页面背景颜色为透明。
+        # self.pages["设置"] = SettingsPage(self.contentFrame, fg_color="transparent")
+        #
+        # self.showPage("首页")  # 默认显示首页
+        #
