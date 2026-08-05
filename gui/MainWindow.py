@@ -102,9 +102,9 @@ class MainWindow(ctk.CTk):
         self.contentFrame.grid_rowconfigure(0, weight=1)  # 让内容区垂直可伸缩
         self.contentFrame.grid_columnconfigure(0, weight=1)  # 让内容区水平可伸缩
         self.pages = {}
-        self.pages["首页"] = HomePage(self.contentFrame, fg_color="transparent")
+        self.pages["首页"] = HomePage(self.contentFrame, fg_color="transparent" )
         # 创建一个首页对象，并存储在self.pages字典中，键为"首页"，值为HomePage对象。第一个参数self.contentFrame表示将页面放置在内容区父容器中，第二个参数fg_color="transparent"表示设置页面背景颜色为透明。
-        self.pages["设置"] = SettingsPage(self.contentFrame, fg_color="transparent")
+        self.pages["设置"] = SettingsPage(self.contentFrame, fg_color="transparent",)
 
         self.showPage("首页")  # 默认显示首页
 
@@ -124,7 +124,7 @@ class MainWindow(ctk.CTk):
             font=("微软雅黑", 16),
             height=40
         )
-        self.addProfileBtn.grid(row=self.numberOfNavigationBarItems + 1, column=0, pady=(10, 20), padx=10, sticky="ew")
+        self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
 
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
@@ -206,7 +206,7 @@ class MainWindow(ctk.CTk):
                 corner_radius=5,
                 border_width=1,
             )
-            btn_frame.grid(row=2 + i, column=0, pady=2, padx=10, sticky="ew")
+            btn_frame.grid(row=3 + i, column=0, pady=2, padx=10, sticky="ew")
             btn_frame.grid_columnconfigure(0, weight=1)
 
             # 添加文本标签（支持换行）
@@ -233,7 +233,7 @@ class MainWindow(ctk.CTk):
     def refreshSchemeButtons(self):
         """刷新方案导航按钮（删除旧的，重新创建）"""
         # 1. 记录旧的弹簧行
-        oldSpringRow = self.numberOfNavigationBarItems
+        # oldSpringRow = self.numberOfNavigationBarItems
         # 2. 删除旧的方案按钮和页面（保留首页、设置）
         fixedButtons = ["首页", "设置"]
         keysToDelete = [k for k in list(self.navButtons.keys()) if k not in fixedButtons]
@@ -248,14 +248,13 @@ class MainWindow(ctk.CTk):
                 self.pages[key].destroy()  # 销毁旧页面
                 del self.pages[key]
         # 3. 重置旧弹簧行权重
-        self.nav_frame.grid_rowconfigure(oldSpringRow,
-                                         weight=0)  # grid_rowconfigure方法用于配置网格行的权重。这里将旧弹簧行的权重设置为0，表示该行不会随着窗口大小变化而伸缩，从而避免布局问题。
+        # self.nav_frame.grid_rowconfigure(oldSpringRow,weight=0)  # grid_rowconfigure方法用于配置网格行的权重。这里将旧弹簧行的权重设置为0，表示该行不会随着窗口大小变化而伸缩，从而避免布局问题。
         # 4. 重新计算
         self.numberOfNavigationBarItems = theNumberOfTargetFilesInTheFolder(configDirectory) + 2
         # 5. 设置新弹簧行
-        self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
+        # self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
         # 6. 移动"+ 新建"按钮到新位置
-        self.addProfileBtn.grid(row=self.numberOfNavigationBarItems + 1, column=0, pady=(10, 20), padx=10, sticky="ew")
+        self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
         # 7. 重新创建方案按钮和页面
         self.createNavigationBarItemsBasedOnShortcutKeyScheme(getShortcutSchemes(configDirectory))
 
