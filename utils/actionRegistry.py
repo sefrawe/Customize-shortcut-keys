@@ -1,7 +1,7 @@
 ''' 动作注册表：集中定义所有动作的元数据（标识、显示名称、参数结构） '''
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 @dataclass # 定义一个数据类，用于描述单个动作参数的规格
 class ParamSpec:
@@ -12,12 +12,16 @@ class ParamSpec:
     default: Any = ""         # 默认值
     required: bool = False    # 是否必填
 
+
 @dataclass
 class ActionDef:
     """描述一个完整的动作定义"""
     key: str                  # 动作标识 (存入 JSON 的 action 字段，如 "pasteText")
     displayName: str          # 展示名称 (下拉框显示用，如 "粘贴文本")
     params: list[ParamSpec] = field(default_factory=list)
+
+    # 规定 handler 接收一个字典参数 (actionParams)
+    handler: Callable[[dict], None] = None
 
 # ──────────────── 动作注册表 ────────────────
 # 目前只包含“无动作”和“粘贴文本”，未来扩展只需在这里追加
@@ -60,6 +64,12 @@ def getActionDefByKey(key: str) -> ActionDef | None:
 def getActionDefByDisplayName(displayName: str) -> ActionDef | None:
     """根据展示名称获取动作定义"""
     return _ACTION_MAP_BY_NAME.get(displayName)
+
+def registerActionHandler(key: str, handler: Callable[[dict], None]):
+    """将执行函数绑定到注册表对应的 ActionDef 上"""
+    actionDef = getActionDefByKey(key)
+    if actionDef:
+        actionDef.handler = handler
 
 # print结果是
 # ['（无动作）', '粘贴文本']

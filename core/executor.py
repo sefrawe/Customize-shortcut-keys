@@ -25,12 +25,14 @@
 import re
 from collections.abc import Callable
 
-from pynput import keyboard
-
-from core.listener import KeyboardListener
 from core.configManager import configDirectory
+from core.listener import KeyboardListener
+# 引入并初始化 handler 绑定 (也可以在 main.py 启动时调用)
+from utils.actionHandlers import initActionHandlers
+from utils.actionRegistry import getActionDefByKey
 from utils.shortcutUtils import getShortcutBySchemeName, getStartupEnabledShortcutScheme
-import win32clipboard as wc
+
+initActionHandlers()
 
 class Executor:
     """动作执行器：负责组装监听器并接收监听结果。"""
@@ -264,68 +266,33 @@ class Executor:
         return True
 
     def _executeShortcut(self, shortcut: dict):
-        """动作分发器：根据 action 类型派发到具体的执行方法。"""
+        """动作分发器：从注册表获取定义并执行"""
         shortcutName = shortcut.get("name", "")
-        action = shortcut.get("action", "")
+        actionKey = shortcut.get("action", "")
         actionParams = shortcut.get("actionParams", {})
 
-        if not action:
+        if not actionKey:
             self.showTip(f"快捷键 '{shortcutName}' 没有配置动作。")
             return
 
-        # 建立动作映射表 (策略模式)
-        actionMap = {
-            "pasteText": self._doPasteText,
-            "systemCommand": self._doSystemCommand,
-            "openPath": self._doOpenPath,
-        }
+        # 1. 从注册表获取动作定义
+        actionDef = getActionDefByKey(actionKey)
+        if actionDef is None:
+            self.showTip(f"未知的动作类型: {actionKey}", title="执行错误")
+            return
 
-        targetAction = actionMap.get(action)
-        if targetAction is None:
-            self.showTip(f"未知的动作类型: {action}", title="执行错误")
+        # 2. 后端参数兜底校验 (防止用户手改JSON导致参数缺失)
+        for spec in actionDef.params:
+            if spec.required and not actionParams.get(spec.key):
+                self.showTip(f"快捷键 '{shortcutName}' 缺少必填参数: {spec.label}", title="执行错误")
+                return
+
+        # 3. 执行挂载的 handler
+        if actionDef.handler is None:
+            self.showTip(f"动作 '{actionDef.displayName}' 尚未实现执行逻辑", title="执行错误")
             return
 
         try:
-            targetAction(actionParams)
+            actionDef.handler(actionParams)
         except Exception as e:
-            self.showTip(f"执行动作 '{action}' 失败:\n{str(e)}", title="执行错误")
-
-    def _doPasteText(self, params):
-        """动作：模拟粘贴文本"""
-        text = params.get("text", "")
-        if not text:
-            return
-
-        # 1. 将文本复制到剪贴板 (使用 pywin32)
-        wc.OpenClipboard()
-        wc.EmptyClipboard()
-        wc.SetClipboardData(wc.CF_UNICODETEXT, text)
-        wc.CloseClipboard()
-
-        # 2. 释放可能还按着的修饰键，否则会变成 Ctrl+Alt+V
-        import time
-        kb = keyboard.Controller()
-        kb.release(keyboard.Key.ctrl_l)
-        kb.release(keyboard.Key.ctrl_r)
-        kb.release(keyboard.Key.alt_l)
-        kb.release(keyboard.Key.alt_r)
-        kb.release(keyboard.Key.shift_l)
-        kb.release(keyboard.Key.shift_r)
-
-        time.sleep(0.05)  # 给系统一点时间处理释放事件
-
-        # 3. 模拟按下 Ctrl+V 粘贴
-        with kb.pressed(keyboard.Key.ctrl):
-            kb.press('v')
-            kb.release('v')
-
-    def _doSystemCommand(self, params):
-        """动作：执行系统命令"""
-        print("准备执行系统命令，参数:", params)
-        pass
-
-    def _doOpenPath(self, params):
-        """动作：打开程序/文件"""
-        print("准备打开路径，参数:", params)
-        pass
-
+            self.showTip(f"执行动作 '{actionDef.displayName}' 失败:\n{str(e)}", title="执行错误")
