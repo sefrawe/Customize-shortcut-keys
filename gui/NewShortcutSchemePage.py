@@ -447,17 +447,3 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         editWindow.grab_set()
         #等待新窗口关闭后再继续执行
         self.wait_window(editWindow)
-
-
-        # # 右侧内容区父容器
-        # self.contentFrame = ctk.CTkFrame(self, fg_color="transparent")  # 定义内容区框架，设置背景颜色为透明
-        # self.contentFrame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)  # 将内容区放置在右侧，填充整个高度和宽度，并设置内边距为10像素
-        # self.contentFrame.grid_rowconfigure(0, weight=1)  # 让内容区垂直可伸缩
-        # self.contentFrame.grid_columnconfigure(0, weight=1)  # 让内容区水平可伸缩
-        # self.pages = {}
-        # self.pages["首页"] = HomePage(self.contentFrame, fg_color="transparent")
-        # # 创建一个首页对象，并存储在self.pages字典中，键为"首页"，值为HomePage对象。第一个参数self.contentFrame表示将页面放置在内容区父容器中，第二个参数fg_color="transparent"表示设置页面背景颜色为透明。
-        # self.pages["设置"] = SettingsPage(self.contentFrame, fg_color="transparent")
-        #
-        # self.showPage("首页")  # 默认显示首页
-        #
