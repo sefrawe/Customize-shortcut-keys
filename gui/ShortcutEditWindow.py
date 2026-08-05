@@ -1,4 +1,6 @@
 ''' 编辑快捷键弹窗 '''
+from tkinter import messagebox
+
 import customtkinter as ctk
 from utils.actionRegistry import (
     getAllActionDisplayNames,
@@ -6,7 +8,9 @@ from utils.actionRegistry import (
     getActionDefByKey,
     ParamSpec
 )
-
+#todo:快捷键录入：当前快捷键输入框是手动打字的，可以改成"按下组合键自动填入"（临时挂载 pynput 监听器）
+#todo：执行器联动注册表：让 executor.py 也读取 actionRegistry，保证配置和执行统一
+#todo：其他页面改造成可滚动的
 
 class ShortcutEditWindow(ctk.CTkToplevel):
     def __init__(self, parent, shortcut):  # 参数分别为父窗口和要编辑的快捷键对象
@@ -14,6 +18,8 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.shortcut = shortcut  # 将要编辑的快捷键对象存储在实例变量中
         # 存储当前动态生成的参数控件，用于最后保存时读取值
         self._paramWidgets: dict = {}
+
+        self.saved = False  # 标记是否保存了修改，初始为False
 
         # 从快捷键对象中获取旧值
         shortcutId = shortcut.get("id", 0)
@@ -28,17 +34,15 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.minsize(600, 400)  # 设置窗口最小尺寸为600x400
         self.geometry("600x400")  # 设置窗口初始尺寸为600x400
 
-        # 配置窗口网格布局
-        # 第一列权重为1，使其在窗口变长时宽度随之变化
         self.grid_columnconfigure(0, weight=1)
-        # 第一行权重为0，使其在窗口变长时高度不随之变化
-        self.grid_rowconfigure(0, weight=0)
-        self.grid_rowconfigure(1, weight=0)
-        self.grid_rowconfigure(2, weight=0)
-
+        self.grid_rowconfigure(0, weight=1)  # 滚动区域占满
+        self.grid_rowconfigure(1, weight=0)  # 底部按钮固定
+        self.scrollFrame = ctk.CTkScrollableFrame(self)
+        self.scrollFrame.grid(row=0, column=0, sticky="nsew")
+        self.scrollFrame.grid_columnconfigure(0, weight=1)
 
         # 名字部分
-        self.nameFrame = ctk.CTkFrame(self, height=50)
+        self.nameFrame = ctk.CTkFrame(self.scrollFrame, height=50)
         self.nameFrame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
         self.nameLabel = ctk.CTkLabel(self.nameFrame, text="名字:",font=("微软雅黑", 16))
         self.nameLabel.grid(row=0, column=0, sticky="w", padx=5, pady=5)
@@ -49,7 +53,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.nameFrame.grid_columnconfigure(1, weight=1)  # 让输入框列可伸缩
 
         # 快捷键部分
-        self.keyFrame = ctk.CTkFrame(self, height=50)
+        self.keyFrame = ctk.CTkFrame(self.scrollFrame, height=50)
         self.keyFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
         self.keyLabel = ctk.CTkLabel(self.keyFrame, text="快捷键:",font=("微软雅黑", 16))
         self.keyLabel.grid(row=0, column=0, sticky="w", padx=5, pady=5)
@@ -60,7 +64,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.keyFrame.grid_columnconfigure(1, weight=1)  # 让输入框列可伸缩
 
         # 备注部分 - 使用多行文本框
-        self.descriptionFrame = ctk.CTkFrame(self, height=50)
+        self.descriptionFrame = ctk.CTkFrame(self.scrollFrame, height=50)
         self.descriptionFrame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         self.descriptionLabel = ctk.CTkLabel(self.descriptionFrame, text="备注:",font=("微软雅黑", 16))
         self.descriptionLabel.grid(row=0, column=0, sticky="w", padx=5, pady=5)
@@ -75,22 +79,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.descriptionEntry.grid(row=0, column=1, sticky="nsew", padx=5, pady=5)  # 填满整个单元格
         self.descriptionFrame.grid_columnconfigure(1, weight=1)  # 让输入框列可伸缩
 
-        # # 动作部分 - 暂时未实现
-        # # self.grid_rowconfigure(3, weight=0)
-        # self.actionFrame = ctk.CTkFrame(self, height=50)
-        # self.actionFrame.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
-        # self.actionLabel = ctk.CTkLabel(self.actionFrame, text="动作:",font=("微软雅黑", 16))
-        # self.actionLabel.grid(row=0, column=0, sticky="w", padx=5, pady=5)
-        # # 创建动作输入框并插入旧值
-        # self.actionEntry = ctk.CTkEntry(self.actionFrame, placeholder_text="请输入新动作", font=("微软雅黑", 16))
-        # self.actionEntry.insert(0, shortcutOldAction)  # 将旧动作插入到输入框第0个字符位置
-        # self.actionEntry.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-        # self.actionFrame.grid_columnconfigure(1, weight=1)  # 让输入框列可伸缩
-        #
-        # # 动作参数部分 - 暂时未实现
-
-        # === 动作类型选择部分 (新增) ===
-        self.actionFrame = ctk.CTkFrame(self, height=50)
+        self.actionFrame = ctk.CTkFrame(self.scrollFrame, fg_color="transparent")
         self.actionFrame.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
         self.actionFrame.grid_columnconfigure(1, weight=1)
 
@@ -105,12 +94,13 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         )
         self.actionOption.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
 
-        # === 动态参数容器 (新增) ===
-        self.paramsFrame = ctk.CTkFrame(self, fg_color="transparent")
+        #动态参数容器
+        self.paramsFrame =ctk.CTkFrame(self.scrollFrame, height=50)
+
         self.paramsFrame.grid(row=4, column=0, sticky="nsew", padx=10, pady=5)
         self.paramsFrame.grid_columnconfigure(1, weight=1)
 
-        # === 初始化回填动作数据 ===
+        #初始化回填动作数据
         actionDef = getActionDefByKey(shortcutOldAction)
         if actionDef:
             self.actionOption.set(actionDef.displayName)
@@ -120,6 +110,14 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             # 未知动作容错：回退为“（无动作）”
             self.actionOption.set("（无动作）")
             self._onActionChanged("（无动作）")
+
+            #底部按钮区
+        self.buttonFrame = ctk.CTkFrame(self, fg_color="transparent")
+        self.buttonFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+
+        ctk.CTkButton(self.buttonFrame, text="保存", command=self.onSave).pack(side="left", padx=5)#side可以填"left"、"right"、"top"、"bottom"，默认是"top"
+        ctk.CTkButton(self.buttonFrame, text="取消", fg_color="#A30000", hover_color="#7A0000",
+                      command=self.destroy).pack(side="left", padx=5)
 
     def _onActionChanged(self, displayName: str, presetParams: dict | None = None):
         """当下拉框动作改变时，动态重建参数区域"""
@@ -159,5 +157,44 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             w.insert(0, str(initialValue))
         return w
 
-        #保存按钮
-        #取消按钮
+    def onSave(self):
+        """点击保存按钮时触发：收集数据、校验、回写、关闭"""
+        # 1. 收集基本数据
+        newName = self.nameEntry.get().strip()
+        newKey = self.keyEntry.get().strip()
+        newDesc = self.descriptionEntry.get("1.0", "end-1c").strip()# 获取多行文本框的内容，去掉末尾换行符
+
+        # 2. 收集动作数据
+        displayName = self.actionOption.get()
+        actionDef = getActionDefByDisplayName(displayName)
+        newAction = actionDef.key if actionDef else ""
+        newActionParams = {}
+
+        if actionDef:
+            for key, widget in self._paramWidgets.items():
+                # 根据控件类型读取值
+                if isinstance(widget, ctk.CTkTextbox):
+                    val = widget.get("1.0", "end-1c").strip()
+                else:  # CTkEntry
+                    val = widget.get().strip()
+
+                # 查找当前参数的规格定义，用于校验必填
+                spec = next((p for p in actionDef.params if p.key == key), None)
+                if spec and spec.required and not val:
+                    messagebox.showerror("错误", f"参数 '{spec.label}' 不能为空！")
+                    return  # 阻止关闭
+
+                newActionParams[key] = val
+
+        # 3. 回写到 shortcut 字典
+        self.shortcut["name"] = newName
+        self.shortcut["keyCombination"] = newKey
+        self.shortcut["description"] = newDesc
+        self.shortcut["action"] = newAction
+        self.shortcut["actionParams"] = newActionParams
+
+        # 4. 标记已保存并关闭窗口
+        self.saved = True
+        self.destroy()
+
+

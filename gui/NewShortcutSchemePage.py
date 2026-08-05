@@ -366,7 +366,6 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             # 6. 编辑按钮
             ctk.CTkButton(actionFrame, text="编辑", width=50,
                           command=lambda shortcutId=item.get("id"): self.editShortcut(shortcutId)
-                          # todo 要弹出个自定义窗口，还要查询回显
                           ).pack(side="right", padx=5)
             # 5. 状态开关
             shortcutsSelectSegmentedButtonForStartup = ctk.CTkSegmentedButton(
@@ -441,9 +440,17 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         if not shortcut:
             messagebox.showerror("错误", f"未找到快捷键 ID {shortcutId} 的配置。")
             return
-
         editWindow = ShortcutEditWindow(self, shortcut)
-        #将焦点设置到新窗口上
         editWindow.grab_set()
-        #等待新窗口关闭后再继续执行
         self.wait_window(editWindow)
+
+        # 窗口关闭后，检查是否点了保存
+        if editWindow.saved:
+            try:
+                from core.configManager import saveShortcutEdit
+                saveShortcutEdit(self.schemeName, shortcutId, shortcut)
+                self.refreshShortcutList()
+                self._refreshExecutor()
+            except (FileNotFoundError, ValueError) as e:
+                messagebox.showerror("错误", f"保存快捷键失败: {e}")
+

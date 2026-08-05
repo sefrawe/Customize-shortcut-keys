@@ -389,38 +389,17 @@ def copyShortcut(schemeName, oldShortcutId, newShortcutName):
             return
     raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{oldShortcutId}' 的快捷键")
 
-def changeShortcutConfig_name(schemeName, shortcutId, newName):
-    pass
-    # config = getShortcutSchemeConfigBySchemeName(schemeName)
-    # if config is None:
-    #     raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
-    # for shortcut in config.get("shortcuts", []):
-    #     if shortcut.get("id") == shortcutId:
-    #         shortcut["name"] = newName
-    #         saveShortcutSchemeConfig(config, schemeName)
-    #         return
-    # raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
-
-def changeShortcutConfig_keyCombination(schemeName, shortcutId, newKeyCombo):
-    pass
-    # config = getShortcutSchemeConfigBySchemeName(schemeName)
-    # if config is None:
-    #     raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
-    # for shortcut in config.get("shortcuts", []):
-    #     if shortcut.get("id") == shortcutId:
-    #         shortcut["keyCombination"] = newKeyCombo
-    #         saveShortcutSchemeConfig(config, schemeName)
-    #         return
-    # raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
-
-def changeShortcutConfig_description(schemeName, shortcutId, newDesc):
-    pass
-    # config = getShortcutSchemeConfigBySchemeName(schemeName)
-    # if config is None:
-    #     raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
-    # for shortcut in config.get("shortcuts", []):
-    #     if shortcut.get("id") == shortcutId:
-    #         shortcut["description"] = newDesc
-    #         saveShortcutSchemeConfig(config, schemeName)
-    #         return
-    # raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
+def saveShortcutEdit(schemeName, shortcutId, newShortcutData):
+    """保存编辑后的快捷键数据（整体覆盖单条快捷键）"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    shortcuts = config.get("shortcuts", [])
+    for i, shortcut in enumerate(shortcuts):
+        if shortcut.get("id") == shortcutId:
+            # 保留原有 id，用新数据覆盖其余字段
+            newShortcutData["id"] = shortcutId
+            shortcuts[i] = newShortcutData
+            saveShortcutSchemeConfig(config, schemeName)
+            return
+    raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
