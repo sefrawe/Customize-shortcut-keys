@@ -51,7 +51,7 @@ class MainWindow(ctk.CTk):
                                   weight=0)  # 左侧导航栏固定宽度.完整解释：grid_columnconfigure方法用于配置网格列的权重。权重为0表示该列不会随着窗口大小变化而伸缩，而权重为1表示该列会根据窗口大小变化而伸缩。
         self.grid_rowconfigure(0, weight=1)  # 行可伸缩
         # 左侧导航栏（垂直菜单）
-        self.nav_frame = ctk.CTkFrame(self, width=150, fg_color="#303030")  # 定义导航栏框架，设置宽度和背景颜色
+        self.nav_frame = ctk.CTkScrollableFrame(self, width=160, fg_color="#303030")  # 定义导航栏框架，设置宽度和背景颜色
         '''
         改width的值，导航栏宽度没有变化的原因：
         你使用的是 grid 布局，在 grid 布局中，CTkFrame 的 width 参数会被忽略，
@@ -62,7 +62,14 @@ class MainWindow(ctk.CTk):
         # 将导航栏放置在左侧，填充整个高度（sticky="ns"表示上下填充），row=0表示第一行，column=0表示第一列。这句代码的作用是将导航栏放置在主窗口的左侧，并且填充整个高度，使其看起来像一个垂直菜单栏。
         self.nav_frame.grid(row=0, column=0, sticky="ns")
         # 导航栏的第 首页加设置加已有两项快捷键方案加1 行（当前index=4）可以伸缩，从而将按钮推到顶部
-        self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
+
+        """
+        导航栏换成可滚动的了
+        CTkScrollableFrame 本身是一个可滚动的容器，它会根据内部内容的高度自动调整显示区域，并显示滚动条。
+        原来的弹簧行（weight=1）是为了让“+新建”按钮始终在导航栏底部，
+        但换成滚动容器后，这个弹簧会被滚动逻辑覆盖，导致“+新建”按钮的位置可能不再固定在最底部。
+        """
+        # self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
 
         self.grid_columnconfigure(1, weight=1)  # 右侧内容区可伸缩
 
@@ -113,11 +120,12 @@ class MainWindow(ctk.CTk):
             hover_color="#3a3a3a",
             text_color="white",
             border_width=1,  # 加个边框突出“新建”动作
-            border_color="#555555",  # 边框颜色
+            # border_color="#555555",  # 边框颜色
             font=("微软雅黑", 16),
             height=40
         )
         self.addProfileBtn.grid(row=self.numberOfNavigationBarItems + 1, column=0, pady=(10, 20), padx=10, sticky="ew")
+
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):
@@ -159,29 +167,67 @@ class MainWindow(ctk.CTk):
         except ValueError as e:
             messagebox.showerror("错误", str(e))
 
+    # def createNavigationBarItemsBasedOnShortcutKeyScheme(self, schemes):
+    #     """根据快捷键方案列表创建导航栏按钮和对应页面"""
+    #     schemes = sorted(schemes, key=lambda x: x["name"])  # sorted() 函数用于对可迭代对象进行排序，返回一个新的列表。
+    #     # key 参数指定一个函数，用于从每个元素中提取用于排序的键。
+    #     # 在这里，lambda x: x["name"] 是一个匿名函数，它接受一个字典 x，并返回该字典中 "name" 键对应的值。
+    #     # 这样，schemes 列表就会根据每个方案的名称进行升序排序。
+    #     for i, scheme in enumerate(schemes):
+    #         #  用 enumerate 拿到索引 i
+    #         schemeName = scheme["name"]
+    #         btn = ctk.CTkButton(
+    #             self.nav_frame,
+    #             text=schemeName,
+    #             command=lambda name=schemeName: self.showPage(name),
+    #             fg_color="transparent",
+    #             hover_color="#3a3a3a",
+    #             text_color="white",
+    #             font=("微软雅黑", 20),
+    #             height=40
+    #         )
+    #         row = 2 + i  # ← row=0是首页, row=1是设置, 方案从 row=2 开始递增
+    #         btn.grid(row=row, column=0, pady=2, padx=10, sticky="ew")
+    #         self.navButtons[schemeName] = btn
+    #         # 创建新方案页面
+    #         self.createNewShortcutSchemePage(schemeName)
+
     def createNavigationBarItemsBasedOnShortcutKeyScheme(self, schemes):
         """根据快捷键方案列表创建导航栏按钮和对应页面"""
-        schemes = sorted(schemes, key=lambda x: x["name"])  # sorted() 函数用于对可迭代对象进行排序，返回一个新的列表。
-        # key 参数指定一个函数，用于从每个元素中提取用于排序的键。
-        # 在这里，lambda x: x["name"] 是一个匿名函数，它接受一个字典 x，并返回该字典中 "name" 键对应的值。
-        # 这样，schemes 列表就会根据每个方案的名称进行升序排序。
+        schemes = sorted(schemes, key=lambda x: x["name"])
         for i, scheme in enumerate(schemes):
-            #  用 enumerate 拿到索引 i
             schemeName = scheme["name"]
-            btn = ctk.CTkButton(
+
+            # 创建自定义按钮容器（Frame）
+            btn_frame = ctk.CTkFrame(
                 self.nav_frame,
-                text=schemeName,
-                command=lambda name=schemeName: self.showPage(name),
                 fg_color="transparent",
-                hover_color="#3a3a3a",
-                text_color="white",
-                font=("微软雅黑", 20),
-                height=40
+                height=40,
+                corner_radius=5,
+                border_width=1,
             )
-            row = 2 + i  # ← row=0是首页, row=1是设置, 方案从 row=2 开始递增
-            btn.grid(row=row, column=0, pady=2, padx=10, sticky="ew")
-            self.navButtons[schemeName] = btn
-            # 创建新方案页面
+            btn_frame.grid(row=2 + i, column=0, pady=2, padx=10, sticky="ew")
+            btn_frame.grid_columnconfigure(0, weight=1)
+
+            # 添加文本标签（支持换行）
+            label = ctk.CTkLabel(
+                btn_frame,
+                text=schemeName,
+                font=("微软雅黑", 16),
+                wraplength=130,
+                text_color="green",#todo联动冲突检测功能，冲突就变色
+                anchor="w"
+            )
+            label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
+            label.bind("<Button-1>", lambda e, name=schemeName: self.showPage(name))
+
+            # 绑定点击事件（模拟按钮点击）
+            btn_frame.bind("<Button-1>", lambda e, name=schemeName: self.showPage(name))
+
+            # 存储按钮对象（用于高亮）
+            self.navButtons[schemeName] = btn_frame
+
+            # ★ 补上这一行：创建对应的方案页面 ★
             self.createNewShortcutSchemePage(schemeName)
 
     def refreshSchemeButtons(self):

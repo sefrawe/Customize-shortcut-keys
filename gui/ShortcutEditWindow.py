@@ -10,7 +10,7 @@ from utils.actionRegistry import (
 )
 #todo:快捷键录入：当前快捷键输入框是手动打字的，可以改成"按下组合键自动填入"（临时挂载 pynput 监听器）
 #todo：执行器联动注册表：让 executor.py 也读取 actionRegistry，保证配置和执行统一
-#todo：其他页面改造成可滚动的
+
 
 class ShortcutEditWindow(ctk.CTkToplevel):
     def __init__(self, parent, shortcut):  # 参数分别为父窗口和要编辑的快捷键对象
