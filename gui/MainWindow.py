@@ -33,8 +33,8 @@ class MainWindow(ctk.CTk):
 
         # 窗口基本设置
         self.title("自定义快捷键工具")
-        self.geometry("800x600")  # 初始窗口大小
-        self.minsize(800, 600)  # 窗口最小大小
+        self.geometry("1000x800")  # 初始窗口大小
+        self.minsize(1000, 800)  # 窗口最小大小
 
         self._set_appearance_mode(appearanceMode)  # 可选: "light", "dark", "system"
 

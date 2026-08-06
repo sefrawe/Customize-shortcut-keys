@@ -57,6 +57,7 @@ def createNewShortcutSchemeConfig(newName):
             "name": newName,
             "description": "这是一个新建快捷键方案",
             "startupEnabled": False,
+            "conflictDetectionMode": "close",
             "currentProfileId": currentNumberOfShortcutKeySchemes
         },
         "shortcuts": [
@@ -336,7 +337,7 @@ def addShortcut(schemeName, shortcutName):
     newShortcut = {
         "id": nextId,
         "name": shortcutName,
-        "description": "这是备注",
+        "description": "新建快捷键，未指定动作",
         "keyCombination": "ctrl+alt+shift",
         "action": "",
         "actionParams": {},

@@ -315,14 +315,38 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         shortcuts.sort(key=self._shortcutSortKey)
         self.shortcutStartupButtons = {}
 
-        # 顶部冲突提示区域
-        headInfoFrame = ctk.CTkLabel(
-            self.shortcutFrame,
-            text="冲突检查提示\n\n66",
+        # 顶部冲突检测区域（整体卡片）
+        headInfoFrame = ctk.CTkFrame(self.shortcutFrame)
+        headInfoFrame.pack(fill="x", pady=5, padx=5)
+
+        headInfoFrame.grid_columnconfigure(0, weight=0)  # 标签列，不伸缩
+        headInfoFrame.grid_columnconfigure(1, weight=1)  # 选项列，可伸缩
+
+        # 第一行：标签 + 选项按钮
+        conflictDetectionLabel = ctk.CTkLabel(
+            headInfoFrame,
+            text="按键冲突检测:",
             font=("微软雅黑", 14),
             bg_color="transparent"
         )
-        headInfoFrame.pack(fill="x", pady=5, padx=5)  # todo: 和冲突检查功能（可以开关）一起最后做，按实际冲突检查结果替换提示文案。还有变更快捷键设置后要重新检查冲突并刷新提示文案
+        conflictDetectionLabel.grid(row=0, column=0, padx=(10, 5), pady=(5, 2), sticky="w")
+
+        conflictDetectionOptions = ctk.CTkSegmentedButton(
+            headInfoFrame,
+            values=["所有方案与此方案", "当前启用的方案与此方案", "仅此方案内", "关闭"],
+            # command=self.changeConflictDetectionMode
+        )
+        conflictDetectionOptions.grid(row=0, column=1, padx=5, pady=(5, 2), sticky="w")
+
+        # 第二行：检测结果（选项按钮正下方）
+        self.conflictResultTextbox = ctk.CTkTextbox(
+            headInfoFrame,
+            height=120,
+            font=("微软雅黑", 13),
+            corner_radius=5,
+            # state="disabled"  # 禁止编辑
+        )
+        self.conflictResultTextbox.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(2, 10))
 
         for item in shortcuts:
             # 1. 单行卡片外框
