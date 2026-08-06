@@ -1,6 +1,8 @@
 '''
 系统托盘
 '''
+from pathlib import Path
+
 # ==============================================================================
 # 【系统托盘功能开发核心架构说明】
 # ------------------------------------------------------------------------------
@@ -28,7 +30,7 @@
 # ==============================================================================
 ''' 系统托盘功能 '''
 import pystray
-from PIL import Image, ImageDraw
+from PIL import Image
 
 
 class TrayIconManager:
@@ -36,7 +38,7 @@ class TrayIconManager:
         self.main_window = main_window
 
         # 生成占位图标 (后续可替换为真实 .ico)
-        self.image_normal = self._create_placeholder_image((73, 109, 137))
+        self.image_normal = self._load_icon()
 
         # 构建初始右键菜单
         self.menu = self._build_menu()
@@ -49,10 +51,15 @@ class TrayIconManager:
             self.menu
         )
 
-    def _create_placeholder_image(self, color):
-        """生成一个简单的纯色方块作为临时图标"""
-        image = Image.new('RGB', (64, 64), color=color)
-        return image
+    def _load_icon(self):
+        """加载图标，从项目 assets 目录读取"""
+
+        icon_path = Path(__file__).parent.parent /"icon.png"
+        if icon_path.exists():
+            return Image.open(icon_path)
+        else:
+            # 如果找不到，就生成一个默认的占位图标
+            return Image.new('RGB', (64, 64), color=(73, 109, 137))
 
     def _build_menu(self):
         """构建右键菜单 (后续会改为动态生成)"""
