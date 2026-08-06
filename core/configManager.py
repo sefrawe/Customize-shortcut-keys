@@ -57,7 +57,7 @@ def createNewShortcutSchemeConfig(newName):
             "name": newName,
             "description": "这是一个新建快捷键方案",
             "startupEnabled": False,
-            "conflictDetectionMode": "close",
+            "conflictDetectionMode": "仅此方案内",
             "currentProfileId": currentNumberOfShortcutKeySchemes
         },
         "shortcuts": [
@@ -182,38 +182,6 @@ def changeShortcutSchemeConfig_StartupEnabled(name=None, schemeId=None, newStart
             messagebox.showerror("错误", str(e))
 
 
-def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None, newDescription=None,
-                               newStartupEnabled=None):
-    # 修改快捷键方案的配置
-    # 当 schemeName 不为 None 且 schemeId 为 None 时，使用 schemeName 来修改配置
-    if schemeName is not None and schemeId is None:
-        if newSchemeName is not None and newSchemeName.strip() != "":
-            changeShortcutSchemeConfig_Name(newName=newSchemeName, oldName=schemeName)
-        if newDescription is not None and newDescription.strip() != "":
-            changeShortcutSchemeConfig_Description(newDescription=newDescription, name=schemeName)
-        if newStartupEnabled is not None:
-            changeShortcutSchemeConfig_StartupEnabled(name=schemeName, newStartupEnabled=newStartupEnabled)
-    # 当 schemeId 不为 None 且 schemeName 为 None 时，使用 schemeId 来修改配置
-    if schemeId is not None and schemeName is None:
-        if newSchemeName is not None and newSchemeName.strip() != "":
-            changeShortcutSchemeConfig_Name(newName=newSchemeName, schemeId=schemeId)
-        if newDescription is not None and newDescription.strip() != "":
-            changeShortcutSchemeConfig_Description(newDescription=newDescription, schemeId=schemeId)
-        if newStartupEnabled is not None:
-            changeShortcutSchemeConfig_StartupEnabled(schemeId=schemeId, newStartupEnabled=newStartupEnabled)
-    # 当 schemeName 和 schemeId 都为 None 时，抛出异常
-    try:
-        if schemeName is not None and schemeId is not None:
-            raise ValueError("只能指定方案名称或方案ID中的一个，不能同时指定两个")
-    except ValueError as e:
-        messagebox.showerror("错误", str(e))
-    # 当 schemeName 和 schemeId 都为 None 时，抛出异常
-    try:
-        if schemeName is None and schemeId is None:
-            raise ValueError("必须且只能指定方案名称或方案ID中的一个")
-    except ValueError as e:
-        messagebox.showerror("错误", str(e))
-
 
 def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=None,
                                newDescription=None, newStartupEnabled=None):
@@ -230,13 +198,13 @@ def changeShortcutSchemeConfig(schemeName=None, schemeId=None, newSchemeName=Non
             changeShortcutSchemeConfig_StartupEnabled(name=effectiveName,
                                                       newStartupEnabled=newStartupEnabled)  # ★ 用 effectiveName
     if schemeId is not None and schemeName is None:
-        effectiveName = None  # 需要先查出当前名字#?疑似没有用
+
         if newSchemeName is not None and newSchemeName.strip() != "":
             # 改名前先查出当前名字
             config = getShortcutSchemeConfigById(schemeId)
             if config is None:
                 raise FileNotFoundError(f"找不到方案ID '{schemeId}' 的配置文件")
-            oldName = config["settings"]["name"]#?疑似没有用
+
             changeShortcutSchemeConfig_Name(newName=newSchemeName, schemeId=schemeId)
             effectiveName = newSchemeName
         else:
@@ -404,3 +372,12 @@ def saveShortcutEdit(schemeName, shortcutId, newShortcutData):
             saveShortcutSchemeConfig(config, schemeName)
             return
     raise ValueError(f"在方案 '{schemeName}' 中找不到ID为 '{shortcutId}' 的快捷键")
+
+
+def changeShortcutSchemeConfig_conflictDetectionMode(schemeName, newMode):
+    """改变快捷键方案的冲突检测模式"""
+    config = getShortcutSchemeConfigBySchemeName(schemeName)
+    if config is None:
+        raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
+    config["settings"]["conflictDetectionMode"] = newMode
+    saveShortcutSchemeConfig(config, schemeName)

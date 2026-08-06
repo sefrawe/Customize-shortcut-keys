@@ -1,11 +1,78 @@
 '''
 新建的快捷键方案
 '''
+
+"""
+==========================================================
+【冲突检测功能 - 整体架构与实现指南】
+==========================================================
+
+一、统一的数据结构（冲突报告）
+----------------------------------------------------------
+每次检测完一个方案，生成一份“冲突报告”字典，供前端直接渲染使用：
+- scheme_name: str        -> 这是哪个方案的报告（路由分发用）。
+- mode: str               -> 当前检测模式（"所有方案与此方案"、"关闭"等）。
+- has_internal: bool      -> 是否有内部冲突。
+- internal_conflicts: dict-> 内部冲突详情，格式: {"ctrl+c": [0, 2], "ctrl+v": [1, 3]}。
+- has_cross: bool         -> 是否有跨方案冲突。
+- cross_conflicts: list   -> 跨方案冲突详情，格式: [{"my_id": 0, "other_scheme": "方案B", "other_id": 1, "key": "ctrl+c"}]。
+
+二、冲突检测逻辑（纯后台，置于 shortcutUtils.py 或专门工具类）
+----------------------------------------------------------
+1. 内部冲突检测（只看自己）：
+   - 获取当前方案所有 enabled=True 的快捷键。
+   - 【关键避坑：字符串归一化】比对前，对 keyCombination 进行归一化处理（按 '+' 拆分、排序后再拼接），
+     避免 "ctrl+alt+1" 和 "alt+ctrl+1" 被误判为不冲突。
+   - 按归一化后的 key 分组，若对应多个 ID 则为内部冲突。
+
+2. 跨方案冲突检测（看别人）：
+   - 若模式为“关闭”或“仅此方案内”，直接跳过。
+   - 若模式为“当前启用的方案与此方案”，只拿其他方案中 startupEnabled=True 的数据比对。
+   - 若模式为“所有方案与此方案”，拿所有方案数据比对。
+   - 比对时同样使用归一化后的 keyCombination 进行匹配。
+
+三、UI 渲染规则（前端，NewShortcutSchemePage）
+----------------------------------------------------------
+使用 CTkTextbox 的 Tag 机制（red_tag, orange_tag）实现单框多色混排。
+
+1. 导航栏 Label 颜色决策树（优先级从高到低）：
+   - 最高：has_internal == True -> 红色（内部冲突，最严重）
+   - 次高：has_cross == True    -> 橙色（跨方案冲突）
+   - 第三：mode == "关闭" 且 startupEnabled == True -> 橙色（警告：已启用但未开检测）
+   - 第四：无冲突 且 startupEnabled == True -> 绿色（健康）
+   - 默认：无冲突 且 startupEnabled == False -> 白色（默认不碍事）
+
+2. 页面内 Textbox 混排渲染逻辑：
+   - 清空 Textbox 内容。
+   - 【关闭模式分支】：
+     · 若方案已启用：用 orange_tag 插入“⚠️ 方案已启用但冲突检测处于关闭状态”。
+     · 若方案未启用：用默认颜色插入“冲突检测已关闭”。
+   - 【非关闭模式分支】：
+     · 如果有内部冲突：用 red_tag 插入“🔴 发现内部冲突:”，换行，列出冲突的 ID。
+     · 如果有跨方案冲突：用 orange_tag 插入“🟠 发现跨方案冲突:”，换行，列出与哪个方案、哪个 ID 冲突。
+     · 如果无冲突：用默认颜色插入“✅ 未检测到冲突”。
+
+四、架构与触发机制（核心难点，由 MainWindow 主导）
+----------------------------------------------------------
+因为跨方案检测需要全局视角，必须由主窗口统一指挥。
+
+1. 缓存机制（防脏数据/防页面切换空白）：
+   - 主窗口维护一个内存字典 self.conflict_reports_cache = {}。
+   - 全局重算后，将所有方案的最新报告存入该缓存。
+   - 在主窗口的 showPage(name) 方法中补充逻辑：如果展示的是 NewShortcutSchemePage，
+     顺手把缓存里该方案的最新报告喂给它，让页面自身调用渲染方法更新 Textbox。
+
+2. 触发频率控制（性能优化）：
+   - 区分“轻量级变更”（改备注、改名）和“重量级变更”（增删改快捷键、切启用状态、切检测模式）。
+   - 仅“重量级变更”通过 onExecutorRefresh 通知主窗口执行全量冲突重算（refresh_all_conflict_status），
+     避免敲键盘防抖保存备注时频繁读取全盘 JSON 导致界面卡顿。
+"""
+
 from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
     copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, \
-    addShortcut, deleteShortcut, resignShortcutIds, copyShortcut
+    addShortcut, deleteShortcut, resignShortcutIds, copyShortcut, changeShortcutSchemeConfig_conflictDetectionMode
 from gui.ShortcutEditWindow import ShortcutEditWindow
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
     getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
@@ -212,7 +279,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             changeShortcutSchemeConfig_Description(newDescription=newDescription, name=self.schemeName)
             # 保存成功，恢复状态
             self.saveStatusVar.configure(text="已自动保存", text_color="green")
-            self._refreshExecutor()
+
         except Exception as e:
             self.saveStatusVar.configure(text="保存失败", text_color="red")
             messagebox.showerror("错误", f"备注保存失败: {e}")
@@ -331,22 +398,46 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         )
         conflictDetectionLabel.grid(row=0, column=0, padx=(10, 5), pady=(5, 2), sticky="w")
 
+        # conflictDetectionOptions = ctk.CTkSegmentedButton(
+        #     headInfoFrame,
+        #     values=["所有方案与此方案", "当前启用的方案与此方案", "仅此方案内", "关闭"],
+        #     command=lambda mode: self.changeConflictDetectionMode(self.schemeName, mode)
+        # )
+        # conflictDetectionOptions.grid(row=0, column=1, padx=5, pady=(5, 2), sticky="w")
+        #
+        # #从配置文件中获取当前的冲突检测模式
+        # config = getShortcutSchemeConfigBySchemeName(self.schemeName)
+        # if config:
+        #     currentMode = config.get("conflictDetectionMode", "关闭")
+        #     conflictDetectionOptions.set(currentMode)
+        # else:
+        #     conflictDetectionOptions.set("关闭")
+
+        # 在 NewShortcutSchemePage.py 的 renderShortcutList 方法中
         conflictDetectionOptions = ctk.CTkSegmentedButton(
             headInfoFrame,
             values=["所有方案与此方案", "当前启用的方案与此方案", "仅此方案内", "关闭"],
-            # command=self.changeConflictDetectionMode
+            command=lambda mode: self.changeConflictDetectionMode(self.schemeName, mode)
         )
         conflictDetectionOptions.grid(row=0, column=1, padx=5, pady=(5, 2), sticky="w")
+        # 从配置文件中获取当前的冲突检测模式
+        config = getShortcutSchemeConfigBySchemeName(self.schemeName)
+        if config:
+            currentMode = config.get("settings", {}).get("conflictDetectionMode", "仅此方案内")
+        else:
+            currentMode = "仅此方案内"
+        conflictDetectionOptions.set(currentMode)
 
         # 第二行：检测结果（选项按钮正下方）
         self.conflictResultTextbox = ctk.CTkTextbox(
             headInfoFrame,
-            height=120,
+            height=100,
             font=("微软雅黑", 13),
             corner_radius=5,
-            # state="disabled"  # 禁止编辑
+            state="disabled"  # 禁止编辑
         )
         self.conflictResultTextbox.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(2, 10))
+        # self.conflictResultTextbox.insert("end", "正在分析冲突...\n")
 
         for item in shortcuts:
             # 1. 单行卡片外框
@@ -477,4 +568,96 @@ class NewShortcutSchemePage(ctk.CTkFrame):
                 self._refreshExecutor()
             except (FileNotFoundError, ValueError) as e:
                 messagebox.showerror("错误", f"保存快捷键失败: {e}")
+
+    # 在 NewShortcutSchemePage.py 的 changeConflictDetectionMode 方法中
+    def changeConflictDetectionMode(self, schemeName, mode):
+        """改变冲突检测模式"""
+        try:
+            from core.configManager import changeShortcutSchemeConfig_conflictDetectionMode
+            changeShortcutSchemeConfig_conflictDetectionMode(schemeName, mode)
+            self._refreshExecutor()  # 通知主窗口重新全盘检测
+        except (FileNotFoundError, ValueError) as e:
+            messagebox.showerror("错误", f"修改冲突检测模式失败: {e}")
+
+    def render_conflict_report(self, report):
+        """根据主窗口传来的冲突报告，使用 Tag 混排渲染 Textbox"""
+        if not hasattr(self, 'conflictResultTextbox'):
+            return
+
+        tb = self.conflictResultTextbox
+        # 配置颜色 Tag
+        tb.tag_config("red_tag", foreground="#FF0000")
+        tb.tag_config("orange_tag", foreground="#FFA500")
+        tb.tag_config("green_tag", foreground="#008000")
+
+        # 解锁文本框进行编辑
+        tb.configure(state="normal")
+        tb.delete("1.0", "end")
+
+        mode = report.get("mode", "关闭")
+        is_enabled = report.get("startupEnabled", False)
+
+        if mode == "关闭":
+            # 通过分段按钮判断当前方案是否启用
+
+            if is_enabled:
+                tb.insert("end", "⚠️ 方案已启用但冲突检测处于关闭状态\n", "orange_tag")
+            else:
+                tb.insert("end", "冲突检测已关闭\n")
+        elif mode == "当前启用的方案与此方案":
+            # 新增：当选择此模式且方案已启用时显示警告
+            if is_enabled:
+                tb.insert("end", "⚠️ 当前方案已启用，此模式将检测与其他启用方案的冲突\n", "orange_tag")
+            # 继续处理冲突检测
+            has_internal = report.get("has_internal", False)
+            has_cross = report.get("has_cross", False)
+
+            # 1. 渲染内部冲突
+            if has_internal:
+                tb.insert("end", "🔴 发现内部冲突:\n", "red_tag")
+                for key, ids in report.get("internal_conflicts", {}).items():
+                    tb.insert("end", f" 按键 {key} 被以下 ID 共用: {ids}\n", "red_tag")
+
+            # 2. 渲染跨方案冲突
+            if has_cross:
+                if has_internal:
+                    tb.insert("end", "\n")  # 如果有内部冲突，加个空行隔开
+                tb.insert("end", "🟠 发现跨方案冲突:\n", "orange_tag")
+                for item in report.get("cross_conflicts", []):
+                    tb.insert("end",
+                              f" 本方案 ID {item['my_id']} 与方案 '{item['other_scheme']}' 的 ID {item['other_id']} 冲突 ({item['key']})\n",
+                              "orange_tag")
+
+            # 3. 无冲突
+            if not has_internal and not has_cross:
+                tb.insert("end", "✅ 未检测到冲突\n", "green_tag")
+        else:
+            # 其他模式的处理保持不变
+            has_internal = report.get("has_internal", False)
+            has_cross = report.get("has_cross", False)
+
+            # 1. 渲染内部冲突
+            if has_internal:
+                tb.insert("end", "🔴 发现内部冲突:\n", "red_tag")
+                for key, ids in report.get("internal_conflicts", {}).items():
+                    tb.insert("end", f" 按键 {key} 被以下 ID 共用: {ids}\n", "red_tag")
+
+            # 2. 渲染跨方案冲突
+            if has_cross:
+                if has_internal:
+                    tb.insert("end", "\n")  # 如果有内部冲突，加个空行隔开
+                tb.insert("end", "🟠 发现跨方案冲突:\n", "orange_tag")
+                for item in report.get("cross_conflicts", []):
+                    tb.insert("end",
+                              f" 本方案 ID {item['my_id']} 与方案 '{item['other_scheme']}' 的 ID {item['other_id']} 冲突 ({item['key']})\n",
+                              "orange_tag")
+
+            # 3. 无冲突
+            if not has_internal and not has_cross:
+                tb.insert("end", "✅ 未检测到冲突\n", "green_tag")
+
+        # 重新锁定文本框
+        tb.configure(state="disabled")
+
+
 

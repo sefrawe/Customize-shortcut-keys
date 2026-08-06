@@ -12,7 +12,7 @@ from core.configManager import globalSettingspath, configDirectory, createNewSho
 from gui.HomePages import HomePage
 from gui.NewShortcutSchemePage import NewShortcutSchemePage
 from gui.SettingsPage import SettingsPage
-from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSchemes
+from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSchemes, getAllSchemesWithShortcuts, analyzeConflicts
 
 # print(f"当前快捷键方案数量: {CurrentNumberOfShortcutKeySchemes}")
 # 打开本地全局设置json文件
@@ -31,12 +31,18 @@ class MainWindow(ctk.CTk):
         super().__init__()
         self.executor = executor
 
+        self.conflict_reports_cache = {}
+
+
+
         # 窗口基本设置
         self.title("自定义快捷键工具")
         self.geometry("1000x800")  # 初始窗口大小
         self.minsize(1000, 800)  # 窗口最小大小
 
         self._set_appearance_mode(appearanceMode)  # 可选: "light", "dark", "system"
+
+        self.after(100, self.refresh_all_conflict_status)
 
         # 在这里添加窗口内容
 
@@ -127,18 +133,29 @@ class MainWindow(ctk.CTk):
         self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
 
 
+
+
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):
-        # 隐藏所有页面。遍历self.pages字典，将所有页面隐藏。grid_forget()方法用于从网格中移除组件，但保留其占用的空间。
+        # 隐藏所有页面
         for pageName, page in self.pages.items():
             page.grid_forget()
-        # 恢复所有导航按钮的默认样式。遍历self.navButtons字典，将所有按钮的背景颜色恢复为透明。
+
+        # 恢复所有导航按钮的默认样式
         for btnName, btn in self.navButtons.items():
             btn.configure(fg_color="transparent")
-        # 显示选中的页面。将选中的页面显示在内容区父容器中，并使用grid()方法进行布局。sticky="nsew"表示按钮在水平和垂直方向上填满整个单元格。
+
+        # 显示选中的页面
         self.pages[name].grid(row=0, column=0, sticky="nsew")
-        # 高亮当前选中的导航按钮。将选中的导航按钮的背景颜色设置为#3a3a3a。
+        # 高亮当前选中的导航按钮
         self.navButtons[name].configure(fg_color="#3a3a3a")
+
+        # ★ 新增：如果是方案页面，把缓存里最新的冲突报告喂给它 ★
+        if isinstance(self.pages[name], NewShortcutSchemePage):
+            report = self.conflict_reports_cache.get(name)
+            if report:
+                # 调用页面的渲染方法 (第四步会去 NewShortcutSchemePage 里实现这个方法)
+                self.pages[name].render_conflict_report(report)
 
     def createNewShortcutSchemePage(self, schemeName):
         newPage = NewShortcutSchemePage(
@@ -215,7 +232,11 @@ class MainWindow(ctk.CTk):
                 text=schemeName,
                 font=("微软雅黑", 16),
                 wraplength=130,
-                text_color="green",#todo联动冲突检测功能，冲突就变色
+                text_color="white",
+                # 没启用的方案就白色
+                # 方案内无冲突但和别的方案比较有冲突就橙色，启用的方案未启动冲突检测也橙色，
+                # 方案内部有冲突直接红色
+                # 启用方案没有任何问题就绿色
                 anchor="w"
             )
             label.grid(row=0, column=0, sticky="w", padx=5, pady=5)
@@ -223,7 +244,12 @@ class MainWindow(ctk.CTk):
 
             # 绑定点击事件（模拟按钮点击）
             btn_frame.bind("<Button-1>", lambda e, name=schemeName: self.showPage(name))
+            # 存储标签对象（用于高亮）
+            # ★ 新增：存储 label 引用，方便后续改颜色 ★
+            if not hasattr(self, 'navLabels'):
+                self.navLabels = {}
 
+            self.navLabels[schemeName] = label
             # 存储按钮对象（用于高亮）
             self.navButtons[schemeName] = btn_frame
 
@@ -288,6 +314,62 @@ class MainWindow(ctk.CTk):
         # 方案或快捷键变更后，先刷新执行器再决定要不要保持监听
         if self.executor:
             self.executor.sync()
+        # ★ 新增：执行全局冲突状态重算 ★
+        self.refresh_all_conflict_status()
+
+    def refresh_all_conflict_status(self):
+        """读取所有方案数据，生成最新的冲突报告，存入缓存，并通知当前页面更新"""
+        all_schemes_data = getAllSchemesWithShortcuts(configDirectory)
+        self.conflict_reports_cache = {}
+
+        for scheme in all_schemes_data:
+            scheme_name = scheme["name"]
+            mode = scheme.get("conflictDetectionMode", "关闭")
+            is_enabled = scheme.get("startupEnabled", False)
+
+            report = analyzeConflicts(scheme_name, mode, all_schemes_data)
+            report["startupEnabled"] = is_enabled  # 补充状态给 UI 决策用
+            self.conflict_reports_cache[scheme_name] = report
+
+            # 更新左侧导航栏 Label 颜色
+            self.update_navbar_color(scheme_name, report)
+
+        # 更新当前打开的页面
+        for name, page in self.pages.items():
+            if isinstance(page, NewShortcutSchemePage) and page.winfo_ismapped():
+                report = self.conflict_reports_cache.get(name)
+                if report:
+                    page.render_conflict_report(report)
+                break
+
+    # 在 MainWindow.py 的 update_navbar_color 方法中
+    def update_navbar_color(self, scheme_name, report):
+        """根据冲突报告和优先级规则，更新导航栏 Label 的文字颜色"""
+        label = getattr(self, 'navLabels', {}).get(scheme_name)
+        if not label:
+            return
+
+        is_enabled = report.get("startupEnabled", False)
+        mode = report.get("mode", "关闭")
+        has_internal = report.get("has_internal", False)
+        has_cross = report.get("has_cross", False)
+
+        color = "white"  # 默认白色
+
+        # 优先级调整：先检查内部冲突（最严重）
+        if has_internal:
+            color = "#FF0000"  # 红色：内部冲突
+        # 其次检查跨方案冲突
+        elif has_cross:
+            color = "#FFA500"  # 橙色：跨方案冲突
+        # 然后检查已启用但检测关闭的警告
+        elif mode == "关闭" and is_enabled:
+            color = "#FFA500"  # 橙色：已启用但未开检测
+        # 最后检查健康状态
+        elif is_enabled:
+            color = "#008000"  # 绿色：健康
+
+        label.configure(text_color=color)
 
     def showExecutorTip(self, title, text):
         """给执行器用的提示窗口回调。"""

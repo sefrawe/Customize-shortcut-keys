@@ -202,13 +202,137 @@ def getshortcut(shortcut):
     return shortcutInfo
 
 
-if __name__ == "__main__":
-    # print(getProfileInfoBySchemeName("方案1"))
-    # print("\n")
-    # print(getProfileBySchemeName("方案1"))
-    # print("\n")
-    print(getShortcutBySchemeName("方案1"))
-    print("\n")
-    print(getStartupEnabledShortcutBySchemeName("方案1"))
-    print("\n")
-    print(getStartupEnabledShortcutNameBySchemeName("方案1"))
+def getAllSchemesWithShortcuts(folderPath):
+    """
+    获取所有方案的完整数据（包含快捷键列表），用于冲突检测。
+    """
+    folder = Path(folderPath)
+    if not folder.exists() or not folder.is_dir():
+        return []
+
+    all_schemes = []
+    for f in folder.iterdir():
+        if not f.is_file() or f.suffix != ".json":
+            continue
+        try:
+            with open(f, "r", encoding="utf-8") as fp:
+                data = json.load(fp)
+                if isinstance(data, dict) and "shortcuts" in data:
+                    settings = data.get("settings", {})
+                    all_schemes.append({
+                        "name": settings.get("name", f.stem),
+                        "startupEnabled": settings.get("startupEnabled", False),
+                        "conflictDetectionMode": settings.get("conflictDetectionMode", "关闭"),  # <-- 新增这一行
+                        "shortcuts": data.get("shortcuts", [])
+                    })
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            continue
+
+    return all_schemes
+
+
+def normalize_key_combination(key_str):
+    """
+    【按键归一化】
+    用于解决用户手写时顺序不一致的问题，比如 "ctrl+alt+1" 和 "alt+ctrl+1"。
+    思路：转小写 -> 按 '+' 拆分 -> 去除首尾空格 -> 排序 -> 重新拼接。
+    这样在比对时，只要按键一样，顺序无所谓。
+    """
+    if not key_str:
+        return ""
+    parts = [p.strip().lower() for p in key_str.split('+') if p.strip()]
+    parts.sort()
+    return "+".join(parts)
+
+
+def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
+    """
+    核心冲突检测逻辑（纯数据逻辑，不涉及UI）
+    返回一个结构化的“冲突报告”字典。
+    """
+    # 1. 找到当前方案的数据
+    currentScheme = None
+    for scheme in allSchemesData:
+        if scheme["name"] == targetSchemeName:
+            currentScheme = scheme
+            break
+
+    # 如果找不到当前方案，返回空报告
+    if currentScheme is None:
+        return {
+            "scheme_name": targetSchemeName,
+            "has_internal": False,
+            "internal_conflicts": {},
+            "has_cross": False,
+            "cross_conflicts": [],
+            "mode": detectionMode
+        }
+
+    # 获取当前方案中“已启用”的快捷键
+    currentEnabledShortcuts = [s for s in currentScheme.get("shortcuts", []) if s.get("enabled", False)]
+
+    # ==============================
+    # 2. 内部冲突检测（只看自己）
+    # ==============================
+    internalConflictsMap = {}
+    for sc in currentEnabledShortcuts:
+        # 【关键】：使用归一化后的按键进行分组
+        normKey = normalize_key_combination(sc.get("keyCombination", ""))
+        if not normKey:  # 空按键组合跳过
+            continue
+        # 按按键组合分组，把 ID 放进列表
+        internalConflictsMap.setdefault(normKey, []).append(sc.get("id"))
+
+    # 剔除只有1个快捷键使用的按键（即没有冲突的）
+    internalConflicts = {k: v for k, v in internalConflictsMap.items() if len(v) > 1}
+
+    # ==============================
+    # 3. 跨方案冲突检测（看别人）
+    # ==============================
+    crossConflicts = []
+
+    # 只有在模式不是“关闭”且不是“仅此方案内”时，才进行跨方案检测
+    if detectionMode not in ["关闭", "仅此方案内"]:
+        for scheme in allSchemesData:
+            # 不和自己比较
+            if scheme["name"] == targetSchemeName:
+                continue
+
+            # 如果模式是“当前启用的方案与此方案”，则跳过未启动启用的方案
+            if detectionMode == "当前启用的方案与此方案" and not scheme.get("startupEnabled", False):
+                continue
+
+            # 获取对方方案中“已启用”的快捷键
+            otherEnabledShortcuts = [s for s in scheme.get("shortcuts", []) if s.get("enabled", False)]
+
+            # 构建对方方案 按键 -> ID 的索引
+            otherKeyMap = {}
+            for otherSc in otherEnabledShortcuts:
+                otherNormKey = normalize_key_combination(otherSc.get("keyCombination", ""))
+                if otherNormKey:
+                    otherKeyMap.setdefault(otherNormKey, []).append(otherSc.get("id"))
+
+            # 遍历当前方案进行比对
+            for mySc in currentEnabledShortcuts:
+                myNormKey = normalize_key_combination(mySc.get("keyCombination", ""))
+                if myNormKey and myNormKey in otherKeyMap:
+                    for otherId in otherKeyMap[myNormKey]:
+                        crossConflicts.append({
+                            "my_id": mySc.get("id"),
+                            "other_scheme": scheme["name"],
+                            "other_id": otherId,
+                            "key": mySc.get("keyCombination", "")
+                        })
+
+    # ==============================
+    # 4. 组装并返回报告
+    # ==============================
+    return {
+        "scheme_name": targetSchemeName,  # 补上 scheme_name 字段
+        "has_internal": len(internalConflicts) > 0,
+        "internal_conflicts": internalConflicts,  # 格式: {"ctrl+alt+1": [0, 2]}
+        "has_cross": len(crossConflicts) > 0,
+        "cross_conflicts": crossConflicts,  # 格式: [{"my_id": 0, "other_scheme": "方案B", "other_id": 1, "key": "ctrl+c"}]
+        "mode": detectionMode
+    }
+
