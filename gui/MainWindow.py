@@ -32,7 +32,13 @@ class MainWindow(ctk.CTk):
         self.executor = executor
 
         self.conflict_reports_cache = {}
+        # 新增：持有托盘引用
+        self.tray_icon = None
 
+
+
+        # 新增：拦截窗口关闭事件，改为隐藏
+        self.protocol("WM_DELETE_WINDOW", self.hide_window)
 
 
         # 窗口基本设置
@@ -374,3 +380,29 @@ class MainWindow(ctk.CTk):
     def showExecutorTip(self, title, text):
         """给执行器用的提示窗口回调。"""
         self.after(0, lambda: messagebox.showinfo(title, text))
+
+    def set_tray_icon(self, tray_icon):
+        """绑定托盘管理器实例"""
+        self.tray_icon = tray_icon
+
+    def hide_window(self):
+        """隐藏窗口而不是销毁"""
+        self.withdraw()
+
+    def show_window(self):
+        """安全地显示并激活窗口"""
+        self.deiconify()
+        self.lift()
+        self.focus_force()
+
+    def quit_app(self):
+        """彻底退出程序的通道"""
+        # 1. 停止执行器和监听器
+        if self.executor:
+            self.executor.stop()
+        # 2. 停止托盘图标
+        if self.tray_icon:
+            self.tray_icon.icon.stop()
+        # 3. 销毁主窗口
+        self.destroy()
+

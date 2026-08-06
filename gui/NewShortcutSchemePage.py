@@ -392,26 +392,11 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         # 第一行：标签 + 选项按钮
         conflictDetectionLabel = ctk.CTkLabel(
             headInfoFrame,
-            text="按键冲突检测:",
+            text="按键冲突检测（仅启用的快捷键参与检测）:",
             font=("微软雅黑", 14),
             bg_color="transparent"
         )
         conflictDetectionLabel.grid(row=0, column=0, padx=(10, 5), pady=(5, 2), sticky="w")
-
-        # conflictDetectionOptions = ctk.CTkSegmentedButton(
-        #     headInfoFrame,
-        #     values=["所有方案与此方案", "当前启用的方案与此方案", "仅此方案内", "关闭"],
-        #     command=lambda mode: self.changeConflictDetectionMode(self.schemeName, mode)
-        # )
-        # conflictDetectionOptions.grid(row=0, column=1, padx=5, pady=(5, 2), sticky="w")
-        #
-        # #从配置文件中获取当前的冲突检测模式
-        # config = getShortcutSchemeConfigBySchemeName(self.schemeName)
-        # if config:
-        #     currentMode = config.get("conflictDetectionMode", "关闭")
-        #     conflictDetectionOptions.set(currentMode)
-        # else:
-        #     conflictDetectionOptions.set("关闭")
 
         # 在 NewShortcutSchemePage.py 的 renderShortcutList 方法中
         conflictDetectionOptions = ctk.CTkSegmentedButton(
@@ -607,7 +592,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         elif mode == "当前启用的方案与此方案":
             # 新增：当选择此模式且方案已启用时显示警告
             if is_enabled:
-                tb.insert("end", "⚠️ 当前方案已启用，此模式将检测与其他启用方案的冲突\n", "orange_tag")
+                tb.insert("end", "⚠️ 当前已启用方案为此方案，此模式将只检测此方案内部的冲突\n", "orange_tag")
             # 继续处理冲突检测
             has_internal = report.get("has_internal", False)
             has_cross = report.get("has_cross", False)

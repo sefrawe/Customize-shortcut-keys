@@ -34,6 +34,8 @@ class SettingsPage(ctk.CTkFrame):
         # 立即应用当前主题
         self.changeTheme(current_theme)
 
+        #
+
     def changeTheme(self, choice):
         """切换主题并保存配置"""
         # 应用主题
