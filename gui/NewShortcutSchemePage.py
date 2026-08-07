@@ -590,10 +590,14 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             else:
                 tb.insert("end", "冲突检测已关闭\n")
         elif mode == "当前启用的方案与此方案":
-            # 新增：当选择此模式且方案已启用时显示警告
-            if is_enabled:
+            # 【新增】当没有任何其他已启用方案时给出提醒
+            if report.get("no_other_enabled_scheme", False):
+                tb.insert("end", "⚠️ 当前没有任何其他已启用的方案，此模式将只检测此方案内部的冲突\n", "orange_tag")
+                # 原有逻辑：当选择此模式且方案已启用时显示警告
+            elif is_enabled:
                 tb.insert("end", "⚠️ 当前已启用方案为此方案，此模式将只检测此方案内部的冲突\n", "orange_tag")
-            # 继续处理冲突检测
+
+                # 继续处理冲突检测
             has_internal = report.get("has_internal", False)
             has_cross = report.get("has_cross", False)
 

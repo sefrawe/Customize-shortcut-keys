@@ -291,6 +291,27 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
     # ==============================
     crossConflicts = []
 
+    # 【新增】用于前端提醒：当前模式为"当前启用的方案与此方案"时，是否存在其他已启用的方案
+    no_other_enabled_scheme = False
+
+    # 只有在模式不是"关闭"且不是"仅此方案内"时，才进行跨方案检测
+    if detectionMode not in ["关闭", "仅此方案内"]:
+        # 【新增】若是"当前启用的方案与此方案"模式，先统计除自己外是否有任何启用方案
+        if detectionMode == "当前启用的方案与此方案":
+            otherEnabledSchemes = [
+                s for s in allSchemesData
+                if s["name"] != targetSchemeName and s.get("startupEnabled", False)
+            ]
+            no_other_enabled_scheme = len(otherEnabledSchemes) == 0
+
+        for scheme in allSchemesData:
+            # 不和自己比较
+            if scheme["name"] == targetSchemeName:
+                continue
+            # 如果模式是"当前启用的方案与此方案"，则跳过未启动启用的方案
+            if detectionMode == "当前启用的方案与此方案" and not scheme.get("startupEnabled", False):
+                continue
+
     # 只有在模式不是“关闭”且不是“仅此方案内”时，才进行跨方案检测
     if detectionMode not in ["关闭", "仅此方案内"]:
         for scheme in allSchemesData:
@@ -333,6 +354,7 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
         "internal_conflicts": internalConflicts,  # 格式: {"ctrl+alt+1": [0, 2]}
         "has_cross": len(crossConflicts) > 0,
         "cross_conflicts": crossConflicts,  # 格式: [{"my_id": 0, "other_scheme": "方案B", "other_id": 1, "key": "ctrl+c"}]
-        "mode": detectionMode
+        "mode": detectionMode,
+        "no_other_enabled_scheme": no_other_enabled_scheme
     }
 
