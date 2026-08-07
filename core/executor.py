@@ -149,6 +149,7 @@ class Executor:
 
     def handleKeyRelease(self, key, pressed_keys):
         # 只有所有键都松开后，才把“已触发”状态清掉
+        #todo :不太人性化（可能改成跟系统一样）
         if not pressed_keys.getPressedKeys():
             self.hasTriggeredCurrentPress = False
 

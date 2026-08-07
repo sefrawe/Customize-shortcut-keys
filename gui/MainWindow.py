@@ -137,7 +137,7 @@ class MainWindow(ctk.CTk):
             height=40
         )
         self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
-        self.after(100, lambda: self.state("zoomed"))  # 延迟最大化，等窗口完全初始化
+
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):
