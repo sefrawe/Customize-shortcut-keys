@@ -661,20 +661,64 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         # 重新锁定文本框
         tb.configure(state="disabled")
 
-    def enableAllShortcuts (self):
+    def enableAllShortcuts(self):
         """启用当前方案的所有快捷键"""
-        pass
+        self._setAllShortcutsStatus(True)
 
-    def disableAllShortcuts (self):
+    def disableAllShortcuts(self):
         """禁用当前方案的所有快捷键"""
-        pass
+        self._setAllShortcutsStatus(False)
 
-    def deleteAllShortcuts (self):
-        """删除当前方案的所有快捷键"""
-        pass
+    def _setAllShortcutsStatus(self, status):
+        """统一修改所有快捷键的启用状态（内部方法）"""
+        try:
+            from core.configManager import saveShortcutSchemeConfig
+            # 1. 获取一次配置
+            config = getShortcutSchemeConfigBySchemeName(self.schemeName)
+            if config is None:
+                raise FileNotFoundError(f"找不到方案 '{self.schemeName}' 的配置文件")
+            # 2. 在内存中批量修改状态
+            for shortcut in config.get("shortcuts", []):
+                shortcut["enabled"] = status
+            # 3. 一次性保存回 JSON 文件
+            saveShortcutSchemeConfig(config, self.schemeName)
+            # 4. 刷新整个列表 UI（重建所有快捷键行）
+            self.refreshShortcutList()
+            # 5. 只触发一次执行器刷新和全局冲突检测
+            self._refreshExecutor()
+
+        except (FileNotFoundError, ValueError) as e:
+            messagebox.showerror("错误", f"批量修改快捷键状态失败: {e}")
+
+    def deleteAllShortcuts(self):
+        """删除当前方案的所有快捷键,这个只有一次提示"""
+        confirm = messagebox.askyesno(
+            "确认清空",
+            f"确定要清空方案 '{self.schemeName}' 中的所有快捷键吗？此操作不可撤销。"
+        )
+        if not confirm:
+            return
+        try:
+            from core.configManager import saveShortcutSchemeConfig
+
+            # 获取当前方案配置
+            config = getShortcutSchemeConfigBySchemeName(self.schemeName)
+            if config is None:
+                raise FileNotFoundError(f"找不到方案 '{self.schemeName}' 的配置文件")
+            # 直接清空快捷键列表
+            config["shortcuts"] = []
+            # 保存回配置文件
+            saveShortcutSchemeConfig(config, self.schemeName)
+            # 刷新 UI 和执行器
+            self.refreshShortcutList()
+            self._refreshExecutor()
+
+        except (FileNotFoundError, ValueError) as e:
+            messagebox.showerror("错误", f"清空快捷键失败: {e}, 请确保方案的配置文件存在和完整。")
 
     def searchShortcuts (self):
         """搜索当前方案的快捷键"""
+        #todo 参考编辑快捷键按钮，要有弹窗
         pass
 
 

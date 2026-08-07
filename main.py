@@ -17,6 +17,8 @@ def main():
     app = MainWindow(executor=executor)
     executor.setTipCallback(app.showExecutorTip)
 
+
+
     # 新增：初始化系统托盘
     tray = TrayIconManager(app)
     app.set_tray_icon(tray)

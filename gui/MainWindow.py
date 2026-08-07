@@ -12,7 +12,8 @@ from core.configManager import globalSettingspath, configDirectory, createNewSho
 from gui.HomePages import HomePage
 from gui.NewShortcutSchemePage import NewShortcutSchemePage
 from gui.SettingsPage import SettingsPage
-from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSchemes, getAllSchemesWithShortcuts, analyzeConflicts
+from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSchemes, getAllSchemesWithShortcuts, \
+    analyzeConflicts
 
 # print(f"当前快捷键方案数量: {CurrentNumberOfShortcutKeySchemes}")
 # 打开本地全局设置json文件
@@ -34,8 +35,6 @@ class MainWindow(ctk.CTk):
         self.conflict_reports_cache = {}
         # 新增：持有托盘引用
         self.tray_icon = None
-
-
 
         # 新增：拦截窗口关闭事件，改为隐藏
         self.protocol("WM_DELETE_WINDOW", self.hide_window)
