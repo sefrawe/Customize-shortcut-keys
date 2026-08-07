@@ -8,7 +8,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from core.configManager import globalSettingspath, configDirectory, createNewShortcutSchemeConfig, \
-    saveShortcutSchemeConfig
+    saveShortcutSchemeConfig, changeShortcutSchemeConfig
 from gui.HomePages import HomePage
 from gui.NewShortcutSchemePage import NewShortcutSchemePage
 from gui.SettingsPage import SettingsPage
@@ -375,4 +375,30 @@ class MainWindow(ctk.CTk):
             self.tray_icon.icon.stop()
         # 3. 销毁主窗口
         self.destroy()
+
+    def switch_scheme_from_tray(self, target_scheme_name):
+        """
+        供托盘调用的方案切换逻辑。
+        参数 target_scheme_name:
+            - 如果是具体方案名，则启用该方案，并互斥禁用其他所有方案。
+            - 如果是 None，则禁用所有方案。
+        """
+        # 1. 读取所有方案，互斥修改配置
+        all_schemes = getShortcutSchemes(configDirectory)
+        for scheme in all_schemes:
+            name = scheme["name"]
+            if name == target_scheme_name:
+                # 目标方案：如果未启用，则启用
+                if not scheme["startupEnabled"]:
+                    changeShortcutSchemeConfig(schemeName=name, newStartupEnabled=True)
+            else:
+                # 非目标方案：如果已启用，则禁用
+                if scheme["startupEnabled"]:
+                    changeShortcutSchemeConfig(schemeName=name, newStartupEnabled=False)
+
+        # 2. 触发全局联动刷新
+        # handleSchemeStartupChanged 内部已经调用了 refreshExecutor()
+        # 而 refreshExecutor() 内部又调用了 refresh_all_conflict_status()
+        # 所以一行代码，配置写入、执行器重载、UI状态刷新、冲突重算全搞定了
+        self.handleSchemeStartupChanged()
 

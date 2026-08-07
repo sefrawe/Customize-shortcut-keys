@@ -1,8 +1,9 @@
-'''
-系统托盘
-'''
+''' 系统托盘功能 '''
+import pystray
+from PIL import Image
 from pathlib import Path
-
+from core.configManager import configDirectory
+from utils.shortcutUtils import getShortcutSchemes, getStartupEnabledShortcutScheme
 # ==============================================================================
 # 【系统托盘功能开发核心架构说明】
 # ------------------------------------------------------------------------------
@@ -28,60 +29,87 @@ from pathlib import Path
 #    - main.py [改动]：初始化托盘并放入 daemon 线程，解析 sys.argv 判断是否静默启动。
 #    - core/executor.py [改动]：拆分出独立的 pause_listener() 和 resume_listener() 方法供托盘调用。
 # ==============================================================================
-''' 系统托盘功能 '''
-import pystray
-from PIL import Image
 
 
 class TrayIconManager:
     def __init__(self, main_window):
         self.main_window = main_window
-
-        # 生成占位图标 (后续可替换为真实 .ico)
         self.image_normal = self._load_icon()
+        # 删除了 self.menu = self._build_menu()，不再需要
 
-        # 构建初始右键菜单
-        self.menu = self._build_menu()
-
-        # 创建托盘图标实例
         self.icon = pystray.Icon(
             "custom_shortcut",
             self.image_normal,
             "自定义快捷键工具",
-            self.menu
+            menu=pystray.Menu(self._build_dynamic_menu)
+        )
+
+    def _build_dynamic_menu(self, icon=None):
+        """每次展开菜单时调用，读取最新配置构建菜单"""
+        # 1. 获取当前启用的方案
+        current_enabled = getStartupEnabledShortcutScheme(configDirectory)
+        current_name = current_enabled["name"] if current_enabled else None
+
+        # 2. 构建二级菜单项（方案列表）
+        submenu_items = []
+        # 添加"无"选项 —— checked 用 lambda 返回布尔值
+        submenu_items.append(
+            pystray.MenuItem(
+                "（无）",
+                self._on_switch,
+                radio=True,
+                checked=lambda item: current_name is None
+            )
+        )
+        # 添加所有方案
+        for scheme in getShortcutSchemes(configDirectory):
+            name = scheme["name"]
+            submenu_items.append(
+                pystray.MenuItem(
+                    name,
+                    self._on_switch,
+                    radio=True,
+                    checked=lambda item, n=name: n == current_name
+                )
+            )
+
+        # 3. 组装并返回主菜单
+        return [
+            pystray.MenuItem("显示主窗口", self._on_show, default=True),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                f"当前启用: {current_name}" if current_name else "启用方案选择 ▶",
+                pystray.Menu(*submenu_items)  # 直接把 Menu 作为 action 传入，pystray 会自动识别为子菜单
+            ),
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem("退出程序", self._on_quit)
+        ]
+
+    def _on_switch(self, icon=None, item=None):
+        """点击二级菜单项时的回调，将指令抛给主线程"""
+        target_name = item.text
+        if target_name == "（无）":
+            target_name = None
+        self.main_window.after(
+            0,
+            lambda: self.main_window.switch_scheme_from_tray(target_name)
         )
 
     def _load_icon(self):
-        """加载图标，从项目 assets 目录读取"""
-
-        icon_path = Path(__file__).parent.parent /"icon.png"
+        """加载图标"""
+        icon_path = Path(__file__).parent.parent / "icon.png"
         if icon_path.exists():
             return Image.open(icon_path)
         else:
-            # 如果找不到，就生成一个默认的占位图标
             return Image.new('RGB', (64, 64), color=(73, 109, 137))
 
-    def _build_menu(self):
-        """构建右键菜单 (后续会改为动态生成)"""
-        return pystray.Menu(
-            pystray.MenuItem("显示主窗口", self._on_show, default=True),
-            pystray.MenuItem("退出程序", self._on_quit)
-        )
-
-    # --- 跨线程通信桥梁：只发指令，不直接操作 ---
-
+    # --- 跨线程通信桥梁 ---
     def _on_show(self, icon=None, item=None):
-        """点击'显示主窗口'或双击图标时的回调"""
-        # 必须用 after 抛给主线程执行
         self.main_window.after(0, self.main_window.show_window)
 
     def _on_quit(self, icon=None, item=None):
-        """点击'退出程序'时的回调"""
-        # 通知主线程执行彻底退出
         self.main_window.after(0, self.main_window.quit_app)
-        # 停止托盘自身运行
         self.icon.stop()
 
     def run(self):
-        """在后台线程中运行托盘图标"""
         self.icon.run()
