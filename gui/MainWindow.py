@@ -44,6 +44,7 @@ class MainWindow(ctk.CTk):
         # 窗口基本设置
         self.title("自定义快捷键工具")
         self.geometry("1000x800")  # 初始窗口大小
+
         self.minsize(1000, 800)  # 窗口最小大小
 
         self._set_appearance_mode(appearanceMode)  # 可选: "light", "dark", "system"
@@ -137,9 +138,7 @@ class MainWindow(ctk.CTk):
             height=40
         )
         self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
-
-
-
+        self.after(100, lambda: self.state("zoomed"))  # 延迟最大化，等窗口完全初始化
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):
@@ -190,31 +189,6 @@ class MainWindow(ctk.CTk):
         except ValueError as e:
             messagebox.showerror("错误", str(e))
 
-    # def createNavigationBarItemsBasedOnShortcutKeyScheme(self, schemes):
-    #     """根据快捷键方案列表创建导航栏按钮和对应页面"""
-    #     schemes = sorted(schemes, key=lambda x: x["name"])  # sorted() 函数用于对可迭代对象进行排序，返回一个新的列表。
-    #     # key 参数指定一个函数，用于从每个元素中提取用于排序的键。
-    #     # 在这里，lambda x: x["name"] 是一个匿名函数，它接受一个字典 x，并返回该字典中 "name" 键对应的值。
-    #     # 这样，schemes 列表就会根据每个方案的名称进行升序排序。
-    #     for i, scheme in enumerate(schemes):
-    #         #  用 enumerate 拿到索引 i
-    #         schemeName = scheme["name"]
-    #         btn = ctk.CTkButton(
-    #             self.nav_frame,
-    #             text=schemeName,
-    #             command=lambda name=schemeName: self.showPage(name),
-    #             fg_color="transparent",
-    #             hover_color="#3a3a3a",
-    #             text_color="white",
-    #             font=("微软雅黑", 20),
-    #             height=40
-    #         )
-    #         row = 2 + i  # ← row=0是首页, row=1是设置, 方案从 row=2 开始递增
-    #         btn.grid(row=row, column=0, pady=2, padx=10, sticky="ew")
-    #         self.navButtons[schemeName] = btn
-    #         # 创建新方案页面
-    #         self.createNewShortcutSchemePage(schemeName)
-
     def createNavigationBarItemsBasedOnShortcutKeyScheme(self, schemes):
         """根据快捷键方案列表创建导航栏按钮和对应页面"""
         schemes = sorted(schemes, key=lambda x: x["name"])
@@ -239,10 +213,7 @@ class MainWindow(ctk.CTk):
                 font=("微软雅黑", 16),
                 wraplength=130,
                 text_color="white",
-                # 没启用的方案就白色
-                # 方案内无冲突但和别的方案比较有冲突就橙色，启用的方案未启动冲突检测也橙色，
-                # 方案内部有冲突直接红色
-                # 启用方案没有任何问题就绿色
+
                 anchor="w"
             )
             label.grid(row=0, column=0, sticky="w", padx=5, pady=5)

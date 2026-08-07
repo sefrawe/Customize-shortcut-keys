@@ -389,6 +389,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         headInfoFrame.grid_columnconfigure(0, weight=0)  # 标签列，不伸缩
         headInfoFrame.grid_columnconfigure(1, weight=1)  # 选项列，可伸缩
 
+
         # 第一行：标签 + 选项按钮
         conflictDetectionLabel = ctk.CTkLabel(
             headInfoFrame,
@@ -413,6 +414,17 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             currentMode = "仅此方案内"
         conflictDetectionOptions.set(currentMode)
 
+
+        # 按钮直接放在 headInfoFrame 里，避免按钮组过长导致布局问题
+        ctk.CTkButton(headInfoFrame, text="启用所有", width=80,
+                      command=self.enableAllShortcuts).grid(row=0, column=2, padx=5, pady=(5, 2), sticky="e")
+        ctk.CTkButton(headInfoFrame, text="禁用所有", width=80,
+                      command=self.disableAllShortcuts).grid(row=0, column=3, padx=5, pady=(5, 2), sticky="e")
+        ctk.CTkButton(headInfoFrame, text="删除所有", width=80,
+                      fg_color="#A30000", hover_color="#7A0000", command=self.deleteAllShortcuts).grid(row=0, column=4, padx=5, pady=(5, 2), sticky="e")
+        ctk.CTkButton(headInfoFrame, text="搜索快捷键", width=80,
+                      command=self.searchShortcuts).grid(row=0, column=5, padx=5, pady=(5, 2), sticky="e")
+
         # 第二行：检测结果（选项按钮正下方）
         self.conflictResultTextbox = ctk.CTkTextbox(
             headInfoFrame,
@@ -421,8 +433,9 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             corner_radius=5,
             state="disabled"  # 禁止编辑
         )
-        self.conflictResultTextbox.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=(2, 10))
-        # self.conflictResultTextbox.insert("end", "正在分析冲突...\n")
+        self.conflictResultTextbox.grid(row=1, column=0, columnspan=6, sticky="ew", padx=10, pady=(2, 10))
+        #检测结果允许出现在按钮（column=2, column=3, column=4, column=5）下
+
 
         for item in shortcuts:
             # 1. 单行卡片外框
@@ -647,6 +660,22 @@ class NewShortcutSchemePage(ctk.CTkFrame):
 
         # 重新锁定文本框
         tb.configure(state="disabled")
+
+    def enableAllShortcuts (self):
+        """启用当前方案的所有快捷键"""
+        pass
+
+    def disableAllShortcuts (self):
+        """禁用当前方案的所有快捷键"""
+        pass
+
+    def deleteAllShortcuts (self):
+        """删除当前方案的所有快捷键"""
+        pass
+
+    def searchShortcuts (self):
+        """搜索当前方案的快捷键"""
+        pass
 
 
 
