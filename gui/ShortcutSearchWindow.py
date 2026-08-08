@@ -1,6 +1,8 @@
 '''
 快捷键搜索窗口
 '''
+from utils.actionRegistry import getAllActionDisplayNames, getActionDefByDisplayName, ParamSpec
+
 '''
 根据快捷键的名字、快捷键组合、备注、动作类型、动作参数等信息进行搜索
 
@@ -14,8 +16,6 @@
 
 import customtkinter as ctk
 
-#todo:快捷键录入：当前快捷键输入框是手动打字的，可以改成"按下组合键自动填入"（临时挂载 pynput 监听器）
-
 
 
 class ShortcutSearchWindow(ctk.CTkToplevel):
@@ -23,6 +23,8 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
         super().__init__(parent)  # 调用父类的构造函数，传入父窗口作为参数
         self.parent = parent  # 保存父窗口（NewShortcutSchemePage）的引用
         self.config = config
+
+        self._paramWidgets: dict = {}
 
         #获取当前方案的所有快捷键信息
         shortcuts=config.get("shortcuts", [])
@@ -60,26 +62,24 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
         self.descriptionEntry.grid(row=2, column=1, sticky="nsew", padx=5, pady=5)
 
         # 动作类型下拉框
-        # self.actionFrame = ctk.CTkFrame(self.scrollFrame, fg_color="transparent")
-        # self.actionFrame.grid(row=3, column=0, sticky="ew", padx=10, pady=5)
-        # self.actionFrame.grid_columnconfigure(1, weight=1)
-        #
-        # ctk.CTkLabel(self.actionFrame, text="动作类型:", font=("微软雅黑", 16)).grid(row=0, column=0, sticky="w",
-        #                                                                                  padx=5, pady=5)
-        #
-        # self.actionOption = ctk.CTkOptionMenu(
-        #     self.actionFrame,
-        #     values=getAllActionDisplayNames(),
-        #     command=self._onActionChanged,
-        #     font=("微软雅黑", 14)
-        # )
-        # self.actionOption.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
-        #
-        # #动态参数容器
-        # self.paramsFrame =ctk.CTkFrame(self.scrollFrame, height=50)
-        #
-        # self.paramsFrame.grid(row=4, column=0, sticky="nsew", padx=10, pady=5)
-        # self.paramsFrame.grid_columnconfigure(1, weight=1)
+        ctk.CTkLabel(self.scrollFrame, text="动作类型:", font=("微软雅黑", 16)).grid(row=3, column=0, sticky="w",
+                                                                                     padx=5, pady=5)
+        self.actionOption = ctk.CTkOptionMenu(
+            self.scrollFrame,
+            values=getAllActionDisplayNames(),
+            command=self._onActionChanged,
+            font=("微软雅黑", 14)
+        )
+        self.actionOption.grid(row=3, column=1, sticky="ew", padx=5, pady=5)  # 统一使用column=1, padx=5
+
+        # 动态参数容器
+        # 添加一个Label用于对齐，背景设为透明，去掉固定的height限制以适应动态生成的控件
+        ctk.CTkLabel(self.scrollFrame, text="动作参数:", font=("微软雅黑", 16)).grid(row=4, column=0, sticky="ne",
+                                                                                     padx=5, pady=5)
+        self.paramsFrame = ctk.CTkFrame(self.scrollFrame, fg_color="transparent")
+        self.paramsFrame.grid(row=4, column=1, sticky="nsew", padx=5, pady=5)  # 统一使用column=1, padx=5
+        self.paramsFrame.grid_columnconfigure(1, weight=1)
+
         #
         # #初始化回填动作数据
         # actionDef = getActionDefByKey(shortcutOldAction)
@@ -92,7 +92,7 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
         #     self.actionOption.set("（无动作）")
         #     self._onActionChanged("（无动作）")
 
-        #动作参数区域
+
 
 
 
@@ -254,43 +254,43 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
     #     ctk.CTkButton(self.buttonFrame, text="取消", fg_color="#A30000", hover_color="#7A0000",
     #                   command=self.destroy).pack(side="left", padx=5)
     #
-    # def _onActionChanged(self, displayName: str, presetParams: dict | None = None):
-    #     """当下拉框动作改变时，动态重建参数区域"""
-    #     # 1. 清空旧控件
-    #     for widget in self.paramsFrame.winfo_children():
-    #         widget.destroy()
-    #     self._paramWidgets.clear()
-    #
-    #     # 2. 获取当前动作定义
-    #     actionDef = getActionDefByDisplayName(displayName)
-    #     if not actionDef:
-    #         return
-    #
-    #     # 3. 根据定义生成新控件
-    #     presetParams = presetParams or {}
-    #     for i, spec in enumerate(actionDef.params):
-    #         # 生成标签 (满足动态标签需求)
-    #         ctk.CTkLabel(self.paramsFrame, text=spec.label + ":", font=("微软雅黑", 14)).grid(
-    #             row=i, column=0, sticky="ne", padx=5, pady=5
-    #         )
-    #         # 生成输入控件
-    #         widget = self._buildParamWidget(spec, presetParams.get(spec.key, spec.default))
-    #         widget.grid(row=i, column=1, sticky="nsew", padx=5, pady=5)
-    #         self._paramWidgets[spec.key] = widget
-    #
-    # def _buildParamWidget(self, spec: ParamSpec, initialValue):
-    #     """根据规格生成具体的控件"""
-    #     if spec.widget == "multiline":
-    #         w = ctk.CTkTextbox(self.paramsFrame, font=("微软雅黑", 13), height=80)
-    #         if initialValue:
-    #             w.insert("1.0", str(initialValue))
-    #         return w
-    #
-    #     # 默认单行输入框
-    #     w = ctk.CTkEntry(self.paramsFrame, font=("微软雅黑", 13))
-    #     if initialValue:
-    #         w.insert(0, str(initialValue))
-    #     return w
+    def _onActionChanged(self, displayName: str, presetParams: dict | None = None):
+        """当下拉框动作改变时，动态重建参数区域"""
+        # 1. 清空旧控件
+        for widget in self.paramsFrame.winfo_children():
+            widget.destroy()
+        self._paramWidgets.clear()
+
+        # 2. 获取当前动作定义
+        actionDef = getActionDefByDisplayName(displayName)
+        if not actionDef:
+            return
+
+        # 3. 根据定义生成新控件
+        presetParams = presetParams or {}
+        for i, spec in enumerate(actionDef.params):
+            # 生成标签 (满足动态标签需求)
+            ctk.CTkLabel(self.paramsFrame, text=spec.label + ":", font=("微软雅黑", 14)).grid(
+                row=i, column=0, sticky="ne", padx=5, pady=5
+            )
+            # 生成输入控件
+            widget = self._buildParamWidget(spec, presetParams.get(spec.key, spec.default))
+            widget.grid(row=i, column=1, sticky="nsew", padx=5, pady=5)
+            self._paramWidgets[spec.key] = widget
+
+    def _buildParamWidget(self, spec: ParamSpec, initialValue):
+        """根据规格生成具体的控件"""
+        if spec.widget == "multiline":
+            w = ctk.CTkTextbox(self.paramsFrame, font=("微软雅黑", 13), height=80)
+            if initialValue:
+                w.insert("1.0", str(initialValue))
+            return w
+
+        # 默认单行输入框
+        w = ctk.CTkEntry(self.paramsFrame, font=("微软雅黑", 13))
+        if initialValue:
+            w.insert(0, str(initialValue))
+        return w
     #
     # def onSave(self):
     #     """点击保存按钮时触发：收集数据、校验、回写、关闭"""
