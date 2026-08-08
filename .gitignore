@@ -50,5 +50,4 @@ config/*.json
 /项目记事本markdown.md
 /test.py
 /config/核心虚拟键码速查表.txt
-/icon.png
-/icon.ico
+

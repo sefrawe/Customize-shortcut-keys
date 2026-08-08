@@ -75,7 +75,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         shortcutOldActionParams = shortcut.get("actionParams", "")
 
         # 设置窗口标题和尺寸
-        self.title("编辑快捷键 id:{}".format(shortcutId))  # 设置窗口标题，显示要编辑的快捷键的id
+        self.title("编辑快捷键：id={}。此窗口涉及修改配置文件，不允许最小化和对软件进行其他操作".format(shortcutId))  # 设置窗口标题，显示要编辑的快捷键的id
         self.minsize(600, 400)  # 设置窗口最小尺寸为600x400
         self.geometry("600x400")  # 设置窗口初始尺寸为600x400
 

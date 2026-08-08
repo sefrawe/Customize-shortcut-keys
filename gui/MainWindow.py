@@ -402,3 +402,17 @@ class MainWindow(ctk.CTk):
         # 所以一行代码，配置写入、执行器重载、UI状态刷新、冲突重算全搞定了
         self.handleSchemeStartupChanged()
 
+
+    # def isSingleInstance(self):
+    #     '''检查是否运行'''
+    #     import socket
+    #     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #     try:
+    #         s.bind(('localhost', 65432))  # 尝试绑定一个特定端口
+    #         return True  # 如果绑定成功，说明没有其他实例在运行
+    #     except socket.error:
+    #         return False  # 如果绑定失败，说明已经有实例在运行
+
+
+
+

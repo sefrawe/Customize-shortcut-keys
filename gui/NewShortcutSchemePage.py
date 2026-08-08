@@ -2,6 +2,8 @@
 新建的快捷键方案
 '''
 
+from gui.ShortcutSearchWindow import ShortcutSearchWindow
+
 """
 ==========================================================
 【冲突检测功能 - 整体架构与实现指南】
@@ -72,7 +74,7 @@ from tkinter import messagebox
 
 from core.configManager import configDirectory, changeShortcutSchemeConfig, changeShortcutSchemeConfig_Description, \
     copyShortcutSchemeConfig, deleteShortcutSchemeConfig, changeShortcutConfig_enabled, \
-    addShortcut, deleteShortcut, resignShortcutIds, copyShortcut, changeShortcutSchemeConfig_conflictDetectionMode
+    addShortcut, deleteShortcut, resignShortcutIds, copyShortcut
 from gui.ShortcutEditWindow import ShortcutEditWindow
 from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortcutScheme, getShortcutSchemes, \
     getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
@@ -112,6 +114,8 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.onDeleted = ondeleted
         self.onExecutorRefresh = onExecutorRefresh
         self._save_after_id = None  # 防抖计时器ID(用于自动保存快捷键方案备注)
+
+        self._searchWindows = []  # 跟踪当前已打开的搜索窗口
 
         self.grid_columnconfigure(0, weight=1)  # 让标题水平可伸缩
         self.grid_rowconfigure(0, weight=0)  # 让标题垂直不可伸缩
@@ -545,7 +549,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
     def editShortcut(self, shortcutId):
         """编辑单个快捷键"""
         self.openEditShortcutWindow(shortcutId)
-        pass
+
 
     def openEditShortcutWindow(self, shortcutId):
         """打开编辑快捷键的窗口"""
@@ -716,10 +720,65 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         except (FileNotFoundError, ValueError) as e:
             messagebox.showerror("错误", f"清空快捷键失败: {e}, 请确保方案的配置文件存在和完整。")
 
-    def searchShortcuts (self):
-        """搜索当前方案的快捷键"""
-        #todo 参考编辑快捷键按钮，要有弹窗
-        pass
+
+
+    def searchShortcuts(self):
+        """搜索当前方案的快捷键（非模态，最多同时打开3个）"""
+        config = getShortcutSchemeConfigBySchemeName(self.schemeName)
+        if config is None:
+            messagebox.showerror("错误", f"找不到方案 '{self.schemeName}' 的配置文件")
+            return
+
+        # 1) 清理列表中已经被关闭的窗口引用（防止残留无效对象）
+        self._searchWindows = [w for w in self._searchWindows if w.winfo_exists()]
+
+        # 2) 数量限制：最多 3 个
+        if len(self._searchWindows) >= 3:
+            messagebox.showwarning(
+                "提示",
+                "最多只能同时打开 3 个搜索窗口，请先关闭部分窗口后再试。"
+            )
+            return
+
+        # 3) 创建新窗口
+        searchWindow = ShortcutSearchWindow(self, config)
+
+        # ❌ 不要调用 searchWindow.grab_set()        → 否则就是模态，无法操作主窗口
+        # ❌ 不要调用 self.wait_window(searchWindow) → 否则会阻塞当前方法
+        # ✅ 让窗口置顶并获取焦点即可 没有用
+
+        # time.sleep(0.5)  # 等待窗口完全创建（可选，确保窗口已经显示）
+        # searchWindow.lift()
+        # searchWindow.focus_set()
+
+        # 4) 加入跟踪列表
+        self._searchWindows.append(searchWindow)
+
+        # 5) 拦截窗口关闭事件：先从列表移除，再真正销毁
+        def _onClose():
+            if searchWindow in self._searchWindows:
+                self._searchWindows.remove(searchWindow)
+            searchWindow.destroy()
+
+        searchWindow.protocol("WM_DELETE_WINDOW", _onClose)
+
+        # shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
+        # if not shortcut:
+        #     messagebox.showerror("错误", f"未找到快捷键 ID {shortcutId} 的配置。")
+        #     return
+        # editWindow = ShortcutEditWindow(self, shortcut)
+        # editWindow.grab_set()
+        # self.wait_window(editWindow)
+        #
+        # # 窗口关闭后，检查是否点了保存
+        # if editWindow.saved:
+        #     try:
+        #         from core.configManager import saveShortcutEdit
+        #         saveShortcutEdit(self.schemeName, shortcutId, shortcut)
+        #         self.refreshShortcutList()
+        #         self._refreshExecutor()
+        #     except (FileNotFoundError, ValueError) as e:
+        #         messagebox.showerror("错误", f"保存快捷键失败: {e}")
 
 
 
