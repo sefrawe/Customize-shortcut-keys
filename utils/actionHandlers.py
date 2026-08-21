@@ -11,10 +11,12 @@ def doPasteText(params: dict):
     if not text:
         return
 
-    # 1. 将文本复制到剪贴板
+    # 1. 将文本复制到剪贴板 (修复纯数字等特定字符串导致 UnicodeDecodeError 的底层 Bug)
     wc.OpenClipboard()
     wc.EmptyClipboard()
-    wc.SetClipboardData(wc.CF_UNICODETEXT, text)
+    # 手动编码为 UTF-16 LE，并强制加上双字节结束符 \x00\x00，防止底层越界读取
+    data = text.encode('utf-16-le') + b'\x00\x00'
+    wc.SetClipboardData(wc.CF_UNICODETEXT, data)
     wc.CloseClipboard()
 
     # 2. 释放可能还按着的修饰键
@@ -28,9 +30,11 @@ def doPasteText(params: dict):
     time.sleep(0.05)
 
     # 3. 模拟按下 Ctrl+V 粘贴
+    # 使用 KeyCode.from_vk(86) 直接指定 V 键的虚拟键码，绕过 pynput 的字符编码解析
+    v_key = keyboard.KeyCode.from_vk(86)
     with kb.pressed(keyboard.Key.ctrl):
-        kb.press('v')
-        kb.release('v')
+        kb.press(v_key)
+        kb.release(v_key)
 
 
 def doSystemCommand(params: dict):
