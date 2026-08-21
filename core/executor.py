@@ -22,6 +22,7 @@
    - _doPasteText: 为防止用户按住的是右 Ctrl 而代码只释放了通用 Ctrl，统一释放所有修饰键的左右变体。
 '''
 
+
 import re
 from collections.abc import Callable
 
@@ -149,7 +150,6 @@ class Executor:
 
     def handleKeyRelease(self, key, pressed_keys):
         # 只有所有键都松开后，才把“已触发”状态清掉
-        #todo :不太人性化（可能改成跟系统一样）
         if not pressed_keys.getPressedKeys():
             self.hasTriggeredCurrentPress = False
 
@@ -229,7 +229,11 @@ class Executor:
             token = token.strip().lower()
             if not token:
                 continue
-            normalized.add(self._normalizeAlias(token))
+            #如果是 plus，直接还原为 '+' 字符
+            if token == "plus":
+                normalized.add("+")
+            else:
+                normalized.add(self._normalizeAlias(token))
         return normalized
 
     def _findMatchedShortcut(self, pressedKeyNames):

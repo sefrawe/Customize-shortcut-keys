@@ -53,7 +53,6 @@ from utils.actionRegistry import (
     getActionDefByKey,
     ParamSpec
 )
-#todo:快捷键录入：当前快捷键输入框是手动打字的，可以改成"按下组合键自动填入"（临时挂载 pynput 监听器）
 
 
 

@@ -241,6 +241,8 @@ def normalize_key_combination(key_str):
     if not key_str:
         return ""
     parts = [p.strip().lower() for p in key_str.split('+') if p.strip()]
+    #将转义的 'plus' 还原为真实的 '+' 字符
+    parts = ["+" if p == "plus" else p for p in parts]
     parts.sort()
     return "+".join(parts)
 
