@@ -68,7 +68,21 @@ ACTION_REGISTRY: list[ActionDef] = [
                 options=["系统默认行为", "强制打开新窗口"]
             )
         ]
-    )
+    ),
+    ActionDef(
+        key="mediaControl",
+        displayName="媒体与音量控制",
+        params=[
+            ParamSpec(
+                key="action",
+                label="控制操作",
+                widget="combobox",
+                default="播放/暂停",
+                options=["播放/暂停", "上一首", "下一首", "音量加", "音量减", "静音"]
+            )
+        ]
+    ),
+
 ]
 
 # 方便快速查询的映射字典

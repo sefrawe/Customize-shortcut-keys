@@ -92,10 +92,38 @@ def doOpenPath(params: dict):
         raise RuntimeError(f"打开路径失败:\n{str(e)}")
 
 
+def doMediaControl(params: dict):
+    """动作：媒体与音量控制"""
+    action = params.get("action", "播放/暂停")
+    kb = keyboard.Controller()
+
+    # 将用户选择的操作映射到 pynput 的多媒体按键对象
+    media_key_map = {
+        "播放/暂停": keyboard.Key.media_play_pause,
+        "上一首": keyboard.Key.media_previous,
+        "下一首": keyboard.Key.media_next,
+        "音量加": keyboard.Key.media_volume_up,
+        "音量减": keyboard.Key.media_volume_down,
+        "静音": keyboard.Key.media_volume_mute
+    }
+
+    target_key = media_key_map.get(action)
+    if target_key is None:
+        return
+
+    try:
+        # 模拟按下并释放多媒体按键
+        kb.press(target_key)
+        kb.release(target_key)
+    except Exception as e:
+        raise RuntimeError(f"执行媒体控制失败:\n{str(e)}")
+
+
 # ★ 在模块加载时，将函数注册到动作注册表 ★
 def initActionHandlers():
     registerActionHandler("pasteText", doPasteText)
     registerActionHandler("openPath", doOpenPath)
+    registerActionHandler("mediaControl", doMediaControl)
 
     for action_def in ACTION_REGISTRY:
         # 跳过 "（无动作）" 这个特殊动作
