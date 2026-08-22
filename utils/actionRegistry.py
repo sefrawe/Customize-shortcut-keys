@@ -82,7 +82,20 @@ ACTION_REGISTRY: list[ActionDef] = [
             )
         ]
     ),
-
+    ActionDef(
+        key="insertDateTime",
+        displayName="插入日期时间\n(格式可以参考Python 官方文档：time.strftime 格式化指令:\nhttps://docs.python.org/zh-cn/3/library/time.html#time.strftime)",
+        params=[
+            ParamSpec(
+                key="format",
+                label="时间格式",
+                widget="entry",
+                default="%Y-%m-%d %H:%M:%S",  # 默认格式：2023-10-25 14:30:00
+                required=True,
+                placeholder="例: %Y年%m月%d日 %H:%M:%S"
+            )
+        ]
+    )
 ]
 
 # 方便快速查询的映射字典

@@ -7,18 +7,17 @@ import subprocess
 import win32clipboard as wc
 from pynput import keyboard
 from utils.actionRegistry import registerActionHandler, ACTION_REGISTRY
+import time
 
 
-def doPasteText(params: dict):
-    """动作：模拟粘贴文本"""
-    text = params.get("text", "")
+def _simulate_input(text: str):
+    """将文本放入剪贴板并模拟 Ctrl+V 粘贴"""
     if not text:
         return
 
-    # 1. 将文本复制到剪贴板 (修复纯数字等特定字符串导致 UnicodeDecodeError 的底层 Bug)
+    # 1. 将文本复制到剪贴板
     wc.OpenClipboard()
     wc.EmptyClipboard()
-    # 手动编码为 UTF-16 LE，并强制加上双字节结束符 \x00\x00，防止底层越界读取
     data = text.encode('utf-16-le') + b'\x00\x00'
     wc.SetClipboardData(wc.CF_UNICODETEXT, data)
     wc.CloseClipboard()
@@ -34,12 +33,27 @@ def doPasteText(params: dict):
     time.sleep(0.05)
 
     # 3. 模拟按下 Ctrl+V 粘贴
-    # 使用 KeyCode.from_vk(86) 直接指定 V 键的虚拟键码，绕过 pynput 的字符编码解析
     v_key = keyboard.KeyCode.from_vk(86)
     with kb.pressed(keyboard.Key.ctrl):
         kb.press(v_key)
         kb.release(v_key)
 
+def doPasteText(params: dict):
+    """动作：模拟粘贴文本"""
+    text = params.get("text", "")
+    _simulate_input(text)
+
+def doInsertDateTime(params: dict):
+    """动作：插入当前日期时间"""
+    fmt = params.get("format", "%Y-%m-%d %H:%M:%S")
+    try:
+        # 根据格式获取当前时间字符串
+        current_time_str = time.strftime(fmt)
+        # 复用粘贴逻辑输入时间
+        _simulate_input(current_time_str)
+    except Exception as e:
+        # 捕获不合法的格式化字符串
+        raise RuntimeError(f"时间格式错误:\n{str(e)}")
 
 def _open_target(target: str):
     """跨平台的打开路径/网址辅助函数"""
@@ -124,6 +138,7 @@ def initActionHandlers():
     registerActionHandler("pasteText", doPasteText)
     registerActionHandler("openPath", doOpenPath)
     registerActionHandler("mediaControl", doMediaControl)
+    registerActionHandler("insertDateTime", doInsertDateTime)
 
     for action_def in ACTION_REGISTRY:
         # 跳过 "（无动作）" 这个特殊动作
