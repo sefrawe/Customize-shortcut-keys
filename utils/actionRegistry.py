@@ -11,6 +11,8 @@ class ParamSpec:
     widget: str = "entry"     # 控件类型: entry(单行), multiline(多行) 等
     default: Any = ""         # 默认值
     required: bool = False    # 是否必填
+    options: list[str] = field(default_factory=list)  # 给 combobox 用的选项列表
+    placeholder: str = ""  #  单行输入框的灰色提示文字
 
 
 @dataclass
@@ -31,6 +33,7 @@ ACTION_REGISTRY: list[ActionDef] = [
         displayName="（无动作）",
         params=[]
     ),
+
     ActionDef(
         key="pasteText",
         displayName="粘贴文本",
@@ -41,6 +44,28 @@ ACTION_REGISTRY: list[ActionDef] = [
                 widget="multiline",
                 default="",
                 required=True
+            )
+        ]
+    ),
+
+    ActionDef(
+        key="openPath",
+        displayName="打开路径/网址",
+        params=[
+            ParamSpec(
+                key="path",
+                label="目标路径",
+                widget="entry",
+                default="",
+                required=True,
+                placeholder="支持网址、文件夹、文件、程序"  # ★ 增加提示 ★
+            ),
+            ParamSpec(
+                key="mode",
+                label="打开模式",
+                widget="combobox",  # ★ 使用下拉框 ★
+                default="系统默认行为",
+                options=["系统默认行为", "强制打开新窗口"]
             )
         ]
     )

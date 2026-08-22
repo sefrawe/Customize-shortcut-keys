@@ -189,17 +189,36 @@ class ShortcutEditWindow(ctk.CTkToplevel):
 
     def _buildParamWidget(self, spec: ParamSpec, initialValue):
         """根据规格生成具体的控件"""
+        # 多行文本框
         if spec.widget == "multiline":
             w = ctk.CTkTextbox(self.paramsFrame, font=("微软雅黑", 13), height=80)
             if initialValue:
                 w.insert("1.0", str(initialValue))
             return w
 
+        # 下拉框
+        elif spec.widget == "combobox":
+            w = ctk.CTkOptionMenu(self.paramsFrame, values=spec.options, font=("微软雅黑", 13))
+            if initialValue:
+                w.set(str(initialValue))
+            else:
+                w.set(spec.options[0] if spec.options else "")
+            return w
+
+        # 复选框
+        elif spec.widget == "checkbox":
+            # CTkCheckBox 的值是 1 或 0
+            w = ctk.CTkCheckBox(self.paramsFrame, text="", font=("微软雅黑", 13))
+            if initialValue:  # 注意 initialValue 可能是布尔值或 1/0
+                w.select()
+            return w
+
         # 默认单行输入框
-        w = ctk.CTkEntry(self.paramsFrame, font=("微软雅黑", 13))
-        if initialValue:
-            w.insert(0, str(initialValue))
-        return w
+        else:
+            w = ctk.CTkEntry(self.paramsFrame, font=("微软雅黑", 13), placeholder_text=spec.placeholder)
+            if initialValue:
+                w.insert(0, str(initialValue))
+            return w
 
     def onSave(self):
         """点击保存按钮时触发：收集数据、校验、回写、关闭"""
@@ -216,17 +235,20 @@ class ShortcutEditWindow(ctk.CTkToplevel):
 
         if actionDef:
             for key, widget in self._paramWidgets.items():
+                spec = next((p for p in actionDef.params if p.key == key), None)
+
                 # 根据控件类型读取值
                 if isinstance(widget, ctk.CTkTextbox):
                     val = widget.get("1.0", "end-1c").strip()
-                else:  # CTkEntry
+                elif isinstance(widget, ctk.CTkCheckBox):
+                    val = bool(widget.get())  # 转为 True/False
+                else:  # CTkEntry 和 CTkOptionMenu
                     val = widget.get().strip()
 
-                # 查找当前参数的规格定义，用于校验必填
-                spec = next((p for p in actionDef.params if p.key == key), None)
-                if spec and spec.required and not val:
+                # 必填校验（复选框不需要校验）
+                if spec and spec.required and spec.widget != "checkbox" and not val:
                     messagebox.showerror("错误", f"参数 '{spec.label}' 不能为空！")
-                    return  # 阻止关闭
+                    return
 
                 newActionParams[key] = val
 

@@ -1,5 +1,9 @@
 ''' 具体的动作执行逻辑实现 '''
+import os
+import sys
 import time
+import webbrowser
+import subprocess
 import win32clipboard as wc
 from pynput import keyboard
 from utils.actionRegistry import registerActionHandler, ACTION_REGISTRY
@@ -37,21 +41,62 @@ def doPasteText(params: dict):
         kb.release(v_key)
 
 
-def doSystemCommand(params: dict):
-    print("准备执行系统命令，参数:", params)
-    pass
+def _open_target(target: str):
+    """跨平台的打开路径/网址辅助函数"""
+    if sys.platform == "win32":
+        os.startfile(target)
+    elif sys.platform == "darwin":
+        subprocess.run(['open', target])
+    else:
+        subprocess.run(['xdg-open', target])
 
 
 def doOpenPath(params: dict):
-    print("准备打开路径，参数:", params)
-    pass
+    """动作：打开路径/网址"""
+    target = params.get("path", "").strip()
+    mode = params.get("mode", "系统默认行为")  # 获取打开模式
+
+    if not target:
+        return
+
+    try:
+        # 1. 明确的网址前缀
+        if target.startswith(("http://", "https://", "ftp://", "mailto:")):
+            if mode == "强制打开新窗口":
+                webbrowser.open_new(target)  # 尝试新窗口
+            else:
+                webbrowser.open(target)  # 交给浏览器（通常是在当前窗口开新标签页并聚焦）
+            return
+
+        # 2. 本地路径处理
+        local_path = os.path.normpath(target)
+        if os.path.exists(local_path):
+            if mode == "强制打开新窗口" and sys.platform == "win32":
+                # Windows下强制资源管理器开新窗口
+                subprocess.run(['explorer.exe', local_path], shell=True)
+            else:
+                # 智能复用：系统默认行为
+                # 对于文件夹，如果已打开，系统通常会自动聚焦到该窗口
+                _open_target(local_path)
+            return
+
+        # 3. 兜底：不带协议的网址 (如 www.baidu.com)
+        if "." in target and not os.path.exists(local_path):
+            webbrowser.open(target)
+            return
+
+        # 真的打不开
+        raise FileNotFoundError(f"找不到路径或无法识别: {target}")
+
+    except Exception as e:
+        raise RuntimeError(f"打开路径失败:\n{str(e)}")
 
 
 # ★ 在模块加载时，将函数注册到动作注册表 ★
 def initActionHandlers():
     registerActionHandler("pasteText", doPasteText)
-    # registerActionHandler("system_command", doSystemCommand)
-    # registerActionHandler("openPath", doOpenPath)
+    registerActionHandler("openPath", doOpenPath)
+
     for action_def in ACTION_REGISTRY:
         # 跳过 "（无动作）" 这个特殊动作
         if action_def.key == "":
