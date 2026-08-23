@@ -1,14 +1,16 @@
 ''' 具体的动作执行逻辑实现 '''
 import os
+import subprocess
 import sys
 import time
 import webbrowser
-import subprocess
+
 import win32clipboard as wc
 from pynput import keyboard
-from utils.actionRegistry import registerActionHandler, ACTION_REGISTRY
-import time
 
+from utils.actionRegistry import registerActionHandler, ACTION_REGISTRY
+
+import shlex
 
 def _simulate_input(text: str):
     """将文本放入剪贴板并模拟 Ctrl+V 粘贴"""
@@ -38,10 +40,12 @@ def _simulate_input(text: str):
         kb.press(v_key)
         kb.release(v_key)
 
+
 def doPasteText(params: dict):
     """动作：模拟粘贴文本"""
     text = params.get("text", "")
     _simulate_input(text)
+
 
 def doInsertDateTime(params: dict):
     """动作：插入当前日期时间"""
@@ -54,6 +58,7 @@ def doInsertDateTime(params: dict):
     except Exception as e:
         # 捕获不合法的格式化字符串
         raise RuntimeError(f"时间格式错误:\n{str(e)}")
+
 
 def _open_target(target: str):
     """跨平台的打开路径/网址辅助函数"""
@@ -133,12 +138,109 @@ def doMediaControl(params: dict):
         raise RuntimeError(f"执行媒体控制失败:\n{str(e)}")
 
 
+def doCustomCommand(params: dict):
+    """动作：执行自定义命令 (暂不包含安全校验与黑名单)"""
+    command = params.get("command", "").strip()
+    executable = params.get("executable", "cmd").strip()
+    execMode = params.get("execMode", "后台静默执行")
+    workingDir = params.get("workingDir", "").strip()
+
+    # ★ 核心安全校验：工作目录绝对不能为空
+    if not workingDir:
+        raise RuntimeError("安全限制：工作目录为必填项，不能为空！")
+
+    # ★ 校验工作目录是否真实存在且是文件夹
+    if not os.path.isdir(workingDir):
+        raise RuntimeError(f"工作目录不存在或不是一个有效的文件夹:\n{workingDir}")
+
+    if not command:
+        return
+
+    # 处理多行命令，将换行符替换为 cmd 可识别的连接符 &
+    # 如果是 cmd，将 \n 替换为 &
+    if "cmd" in executable.lower():
+        command = command.replace('\n', ' & ')
+    # 如果是 powershell，将 \n 替换为 ;
+    elif "powershell" in executable.lower() or "pwsh" in executable.lower():
+        command = command.replace('\n', ' ; ')
+
+    try:
+        is_win = sys.platform == "win32"
+        exe_lower = executable.lower()
+
+        # 判断使用的 shell 类型，以便适配不同的启动参数 (/c, /k, -Command 等)
+        is_cmd = "cmd" in exe_lower
+        is_ps = "powershell" in exe_lower or "pwsh" in exe_lower
+
+        # ★ 提前定义好 Windows 下的窗口标志位
+        no_window_flag = subprocess.CREATE_NO_WINDOW if is_win else 0
+        new_console_flag = subprocess.CREATE_NEW_CONSOLE if is_win else 0
+
+        # ============ 1. 后台静默执行 ============
+        if execMode == "后台静默执行":
+            if is_win:
+                if is_cmd:
+                    command = command.replace('\n', ' & ')
+                    subprocess.Popen(['cmd', '/c', command], cwd=workingDir, creationflags=no_window_flag)
+                elif is_ps:
+                    command = command.replace('\n', ' ; ')
+                    subprocess.Popen(['powershell', '-NoProfile', '-Command', command], cwd=workingDir,
+                                     creationflags=no_window_flag)
+                else:
+                    # 直接用列表传参，list2cmdline 自动处理路径空格
+                    subprocess.Popen([executable, '-c', command], cwd=workingDir, creationflags=no_window_flag)
+            else:
+                subprocess.Popen([executable, '-c', command], cwd=workingDir)
+
+        # ============ 2. 弹出终端并保持 ============
+        elif execMode == "弹出终端并保持":
+            if is_win:
+                if is_cmd:
+                    command = command.replace('\n', ' & ')
+                    subprocess.Popen(['cmd', '/k', command], cwd=workingDir, creationflags=new_console_flag)
+                elif is_ps:
+                    command = command.replace('\n', ' ; ')
+                    subprocess.Popen(['powershell', '-NoExit', '-Command', command], cwd=workingDir,
+                                     creationflags=new_console_flag)
+                else:
+                    # ★ 不用 cmd /k 包裹，改为在代码末尾追加 input() 阻塞
+                    if 'python' in executable.lower():
+                        kept_command = command + '\ninput("\\n--- 执行完毕，按回车键关闭 ---")'
+                        subprocess.Popen([executable, '-c', kept_command], cwd=workingDir,
+                                         creationflags=new_console_flag)
+                    else:
+                        # 非 Python 的兜底方案
+                        subprocess.Popen([executable, '-c', command], cwd=workingDir, creationflags=new_console_flag)
+            else:
+                subprocess.Popen(['xterm', '-hold', '-e', executable, '-c', command], cwd=workingDir)
+
+        # ============ 3. 弹出终端执行后关闭 ============
+        elif execMode == "弹出终端执行后关闭":
+            if is_win:
+                if is_cmd:
+                    command = command.replace('\n', ' & ')
+                    subprocess.Popen(['cmd', '/c', command], cwd=workingDir, creationflags=new_console_flag)
+                elif is_ps:
+                    command = command.replace('\n', ' ; ')
+                    subprocess.Popen(['powershell', '-NoProfile', '-Command', command], cwd=workingDir,
+                                     creationflags=new_console_flag)
+                else:
+                    # 直接用列表传参，执行完自然关闭
+                    subprocess.Popen([executable, '-c', command], cwd=workingDir, creationflags=new_console_flag)
+            else:
+                subprocess.Popen(['xterm', '-e', executable, '-c', command], cwd=workingDir)
+
+    except Exception as e:
+        raise RuntimeError(f"执行命令失败:\n{str(e)}")
+
+
 # ★ 在模块加载时，将函数注册到动作注册表 ★
 def initActionHandlers():
     registerActionHandler("pasteText", doPasteText)
     registerActionHandler("openPath", doOpenPath)
     registerActionHandler("mediaControl", doMediaControl)
     registerActionHandler("insertDateTime", doInsertDateTime)
+    registerActionHandler("customCommand", doCustomCommand)
 
     for action_def in ACTION_REGISTRY:
         # 跳过 "（无动作）" 这个特殊动作

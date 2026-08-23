@@ -95,7 +95,56 @@ ACTION_REGISTRY: list[ActionDef] = [
                 placeholder="例: %Y年%m月%d日 %H:%M:%S"
             )
         ]
-    )
+    ),
+
+    ActionDef(
+        key="customCommand",
+        displayName="执行自定义命令(参数多，记得往下滑)",
+        params=[
+            ParamSpec(
+                key="command",
+                label="命令语句（设置中黑名单里的命令将被拒绝执行）",
+                widget="multiline",
+                default="",
+                required=True,
+                placeholder="如: ping baidu.com 或 echo hello"
+            ),
+            # ★ 修改这里的 label 和 placeholder ★
+            ParamSpec(
+                key="executable",
+                label="执行程序（目前仅支持 “cmd”、“powershell”、python.exe的完整绝对路径）",
+                widget="entry",
+                default="cmd",
+                required=True,
+                placeholder="填 cmd、powershell 或 python.exe 的绝对路径"
+            ),
+            ParamSpec(
+                key="execMode",
+                label="执行模式",
+                widget="combobox",
+                options=[
+                    "后台静默执行",  # 这个选项的行为是执行完后自动关闭
+                    "弹出终端并保持",
+                    "弹出终端执行后关闭"
+                ],
+                default="后台静默执行"
+            ),
+            ParamSpec(
+                key="workingDir",
+                label="工作目录 (必填，须为有效的绝对路径)",
+                widget="entry",
+                default="",
+                required=True,
+                placeholder="留空将拒绝执行！必须为有效的绝对路径"
+            ),
+            ParamSpec(
+                key="needConfirm",
+                label="执行前需要确认",
+                widget="checkbox",
+                default=True
+            )
+        ]
+    ),
 ]
 
 # 方便快速查询的映射字典

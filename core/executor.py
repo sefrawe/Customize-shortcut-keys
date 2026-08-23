@@ -140,15 +140,24 @@ class Executor:
     def sync(self):
         """同步执行器状态：有方案就保持监听，没方案就停掉。"""
         self.refresh()
+        # 无论监听器是否在运行，都重置状态标志，防止编辑后状态卡死
+        self.hasTriggeredCurrentPress = False
+        self.isExecuting = False
+
         if self.activeScheme is None:
-            self.hasTriggeredCurrentPress = False
             if self.listener is not None and self.isListening:
                 self.listener.stop()
                 self.isListening = False
             return None
+
         if self.listener is None or not self.isListening:
             self._buildListener()
             return self.start()
+
+        #  监听器仍在运行时，清空按键集合，防止残留按键状态干扰
+        if self.listener is not None:
+            self.listener.pressedKey.clearKeys()
+
         return self.activeScheme
 
     def getActiveSchemeInfo(self):
