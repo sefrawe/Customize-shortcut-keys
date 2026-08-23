@@ -103,27 +103,34 @@ ACTION_REGISTRY: list[ActionDef] = [
         params=[
             ParamSpec(
                 key="command",
-                label="命令语句（设置中黑名单里的命令将被拒绝执行）",
+                label="命令语句\n（设置中黑名单里的命令将被拒绝执行）",
                 widget="multiline",
                 default="",
                 required=True,
                 placeholder="如: ping baidu.com 或 echo hello"
             ),
-            # ★ 修改这里的 label 和 placeholder ★
             ParamSpec(
-                key="executable",
-                label="执行程序（目前仅支持 “cmd”、“powershell”、python.exe的完整绝对路径）",
-                widget="entry",
+                key="interpreterType",
+                label="解释器类型",
+                widget="combobox",
+                options=["cmd", "powershell", "python"],
                 default="cmd",
+                required=True
+            ),
+            ParamSpec(
+                key="executablePath",
+                label="执行程序绝对路径 (必填)",
+                widget="entry",
+                default=r"C:\Windows\System32\cmd.exe",
                 required=True,
-                placeholder="填 cmd、powershell 或 python.exe 的绝对路径"
+                placeholder=r"PowerShell默认: C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
             ),
             ParamSpec(
                 key="execMode",
                 label="执行模式",
                 widget="combobox",
                 options=[
-                    "后台静默执行",  # 这个选项的行为是执行完后自动关闭
+                    "后台静默执行",
                     "弹出终端并保持",
                     "弹出终端执行后关闭"
                 ],
@@ -131,7 +138,7 @@ ACTION_REGISTRY: list[ActionDef] = [
             ),
             ParamSpec(
                 key="workingDir",
-                label="工作目录 (必填，须为有效的绝对路径)",
+                label="工作目录\n(必填，须为有效的绝对路径)",
                 widget="entry",
                 default="",
                 required=True,
