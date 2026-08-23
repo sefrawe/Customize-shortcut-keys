@@ -381,3 +381,66 @@ def changeShortcutSchemeConfig_conflictDetectionMode(schemeName, newMode):
         raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
     config["settings"]["conflictDetectionMode"] = newMode
     saveShortcutSchemeConfig(config, schemeName)
+
+
+# ==================== 用户黑名单管理 ====================
+
+def loadUserBlacklist():
+    """
+    从 Global Settings.json 读取用户自定义黑名单（文本格式）。
+    
+    返回值：dict，如 {"cmd": ["format", "diskpart"], "powershell": ["Format-Volume", "Remove-Item"]}
+    如果配置文件中没有该字段，返回空字典（向后兼容）。
+    """
+    with open(globalSettingspath, "r", encoding="utf-8") as f:
+        globalSettings = json.load(f)
+    
+    # 读取原始文本格式
+    raw_text = globalSettings.get("userBlacklist", "")
+    if not raw_text.strip():
+        return {}
+
+    # 解析文本格式为字典
+    blacklist_dict = {}
+    for line in raw_text.split('\n'):
+        line = line.strip()
+        if not line or line.startswith('#'):  # 跳过空行和注释
+            continue
+            
+        # 匹配 [解释器名] 关键词1, 关键词2 格式
+        match = re.match(r'^\[(.+?)\]\s*(.+)$', line)
+        if match:
+            interpreter = match.group(1).strip()
+            keywords_str = match.group(2).strip()
+            # 分割关键词，去除空格
+            keywords = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
+            if keywords:
+                blacklist_dict[interpreter] = keywords
+    
+    return blacklist_dict
+
+
+def saveUserBlacklist(blacklist: dict):
+    """
+    将用户自定义黑名单字典转换为文本格式，写入 Global Settings.json。
+    
+    参数：
+        blacklist: 字典，如 {"cmd": ["format", "diskpart"], "powershell": ["Format-Volume", "Remove-Item"]}
+    """
+    with open(globalSettingspath, "r", encoding="utf-8") as f:
+        globalSettings = json.load(f)
+    
+    # 将字典转换为文本格式
+    lines = []
+    for interpreter, keywords in blacklist.items():
+        if keywords:  # 只保存有关键词的解释器
+            keywords_str = ", ".join(keywords)
+            lines.append(f"[{interpreter}] {keywords_str}")
+    
+    # 合并空行和注释（如果有的话）
+    globalSettings["userBlacklist"] = "\n".join(lines)
+    
+    # 保存
+    f.seek(0)
+    json.dump(globalSettings, f, ensure_ascii=False, indent=2)
+    f.truncate()

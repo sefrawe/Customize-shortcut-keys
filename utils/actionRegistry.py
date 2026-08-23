@@ -23,7 +23,7 @@ class ActionDef:
     params: list[ParamSpec] = field(default_factory=list)
 
     # 规定 handler 接收一个字典参数 (actionParams)
-    handler: Callable[[dict], None] = None
+    handler: Callable[[dict, dict | None], None] = None
 
 # ──────────────── 动作注册表 ────────────────
 # 目前只包含“无动作”和“粘贴文本”，未来扩展只需在这里追加

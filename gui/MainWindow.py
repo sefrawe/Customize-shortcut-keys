@@ -15,6 +15,8 @@ from gui.SettingsPage import SettingsPage
 from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSchemes, getAllSchemesWithShortcuts, \
     analyzeConflicts
 
+import threading
+
 # print(f"当前快捷键方案数量: {CurrentNumberOfShortcutKeySchemes}")
 # 打开本地全局设置json文件
 with open(globalSettingspath, "r", encoding="utf-8") as f:
@@ -137,6 +139,11 @@ class MainWindow(ctk.CTk):
             height=40
         )
         self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
+
+
+        # 新增：向执行器注入跨线程确认弹窗回调
+        if self.executor:
+            self.executor.setConfirmCallback(self.show_confirm_dialog)
 
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
@@ -351,6 +358,25 @@ class MainWindow(ctk.CTk):
         """给执行器用的提示窗口回调。"""
         self.after(0, lambda: messagebox.showinfo(title, text))
 
+
+    def show_confirm_dialog(self, message: str, result_holder: list, event: threading.Event):
+        """
+        供子线程调用的确认弹窗。
+        通过 self.after(0, ...) 将弹窗操作抛回 Tkinter 主线程执行，
+        弹窗结束后将结果存入 result_holder 并唤醒子线程。
+        """
+        def _ask():
+            # 在主线程中弹出确认框
+            result = messagebox.askyesno("执行确认", message)
+            # 将结果存入可变容器
+            result_holder[0] = result
+            # 唤醒阻塞的子线程
+            event.set()
+
+        # 抛回主线程执行
+        self.after(0, _ask)
+
+
     def set_tray_icon(self, tray_icon):
         """绑定托盘管理器实例"""
         self.tray_icon = tray_icon
@@ -403,15 +429,7 @@ class MainWindow(ctk.CTk):
         self.handleSchemeStartupChanged()
 
 
-    # def isSingleInstance(self):
-    #     '''检查是否运行'''
-    #     import socket
-    #     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    #     try:
-    #         s.bind(('localhost', 65432))  # 尝试绑定一个特定端口
-    #         return True  # 如果绑定成功，说明没有其他实例在运行
-    #     except socket.error:
-    #         return False  # 如果绑定失败，说明已经有实例在运行
+
 
 
 

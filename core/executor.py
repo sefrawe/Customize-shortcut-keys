@@ -62,6 +62,10 @@ class Executor:
         # 定义一个可选的回调函数，用于显示提示信息。如果未设置回调函数，则使用默认的控制台输出方式。
         self.tipCallback: Callable[[str, str], None] | None = None
 
+        # 跨线程确认弹窗回调 
+        self.confirmCallback: Callable[[str, list, threading.Event], None] | None = None
+        
+
         # 定义一个可选的字典，用于存储当前启用的快捷键方案。如果没有启用的方案，则为 None。
         self.activeScheme: dict | None = None
 
@@ -93,6 +97,12 @@ class Executor:
     def setTipCallback(self, callback: Callable[[str, str], None]):
         """设置提示窗口回调。"""
         self.tipCallback = callback
+
+
+    def setConfirmCallback(self, callback: Callable[[str, list, threading.Event], None]):
+        """设置跨线程确认弹窗回调，供动作执行器在需要用户确认时调用。"""
+        self.confirmCallback = callback
+
 
     def showTip(self, text, title="提示"):
         """显示提示信息；没有回调时退化为控制台输出。"""
@@ -358,7 +368,11 @@ class Executor:
                 return
 
             try:
-                actionDef.handler(actionParams)
+                # ★ 修改：构建 context 并传递给 handler ★
+                context = {
+                    "confirm_callback": self.confirmCallback
+                }
+                actionDef.handler(actionParams, context)
             except Exception as e:
                 self.showTip(f"执行动作 '{actionDef.displayName}' 失败:\n{str(e)}", title="执行错误")
         finally:
