@@ -78,15 +78,21 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
         self.scrollFrame.grid_rowconfigure(5, weight=1) # 让结果框占据剩余空间
         self.resultTextbox.configure(state="disabled")
 
-        # 7. 按钮区
+        # 7. 按钮区 - 只保留搜索和取消按钮
         self.buttonFrame = ctk.CTkFrame(self, fg_color="transparent")
         self.buttonFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
         ctk.CTkButton(self.buttonFrame, text="搜索", command=self.onSearch).pack(side="left", padx=5)
         ctk.CTkButton(self.buttonFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="left", padx=5)
-        ctk.CTkButton(self.buttonFrame, text="重置", command=self.onReset).pack(side="left", padx=5)
 
-        # 初始化时执行一次空搜索，展示全部快捷键
-        self.onSearch()
+        # 初始化时不执行搜索，显示提示信息
+        self._show_initial_message()
+
+    def _show_initial_message(self):
+        """显示初始提示信息"""
+        self.resultTextbox.configure(state="normal")
+        self.resultTextbox.delete("1.0", "end")
+        self.resultTextbox.insert("end", "请点击「搜索」按钮获取结果")
+        self.resultTextbox.configure(state="disabled")
 
     def onSearch(self):
         """点击搜索按钮时触发：收集数据、执行匹配、渲染结果"""
@@ -101,128 +107,198 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
         if actionDisplayName != "（不限）":
             actionDef = getActionDefByDisplayName(actionDisplayName)
 
-        # 3. 遍历快捷键列表进行筛选
+        # 3. 收集动作参数搜索条件 (只收集用户填写的)
+        param_conditions = {}
+        for param_key, widget in self._paramWidgets.items():
+            val = ""
+            if isinstance(widget, ctk.CTkTextbox):
+                val = widget.get("1.0", "end-1c").strip()
+            elif isinstance(widget, ctk.CTkOptionMenu):
+                val = widget.get()
+            elif isinstance(widget, ctk.CTkEntry):
+                val = widget.get().strip()
+
+            if val and val != "（不限）":
+                param_conditions[param_key] = (widget, val)
+
+        # 4. 判断是否没有任何搜索条件 (全默认状态)
+        has_no_conditions = not name and not key and not desc and not actionDef and not param_conditions
+
         matchedShortcuts = []
+        # 5. 遍历快捷键列表进行筛选
         for shortcut in self.config.get("shortcuts", []):
-            # 3.1 名字匹配 (子串包含)
-            if name and name not in shortcut.get("name", "").lower():
+            matched_fields = set()
+
+            # --- 情况 A: 全默认状态，匹配所有 ---
+            if has_no_conditions:
+                matchedShortcuts.append({"shortcut": shortcut, "matched_fields": matched_fields})
                 continue
 
-            # 3.2 快捷键匹配 (归一化后子串包含)
-            if key:
+            # --- 情况 B: 有搜索条件，必须同时满足(AND)所有填写的条件 ---
+            is_match = True
+
+            # 5.1 名字匹配
+            if name:
+                if name in shortcut.get("name", "").lower():
+                    matched_fields.add("name")
+                else:
+                    is_match = False
+
+            # 5.2 快捷键匹配
+            if is_match and key:
                 norm_key = normalize_key_combination(key)
                 norm_sc_key = normalize_key_combination(shortcut.get("keyCombination", ""))
-                if not norm_sc_key or norm_key not in norm_sc_key:
-                    continue
-
-            # 3.3 备注匹配 (子串包含)
-            if desc and desc not in shortcut.get("description", "").lower():
-                continue
-
-            # 3.4 动作类型匹配 (精确匹配)
-            if actionDef is not None:
-                if shortcut.get("action", "") != actionDef.key:
-                    continue
-
-            # 3.5 动作参数匹配 (仅对用户填写的字段做匹配)
-            params_matched = True
-            for param_key, widget in self._paramWidgets.items():
-                # --- 1. 判断控件类型并安全取值 ---
-                val = ""
-                if isinstance(widget, ctk.CTkTextbox):
-                    val = widget.get("1.0", "end-1c").strip()
-                elif isinstance(widget, ctk.CTkOptionMenu):
-                    val = widget.get() # combobox 或 checkbox
-                elif isinstance(widget, ctk.CTkEntry):
-                    val = widget.get().strip() # entry 或 slider(退化)
-
-                # --- 2. 跳过空值和"（不限）" ---
-                if not val or val == "（不限）":
-                    continue
-
-                # --- 3. 获取目标快捷键中该参数的值 ---
-                target_val_raw = shortcut.get("actionParams", {}).get(param_key, "")
-                target_val = str(target_val_raw)
-
-                # --- 4. 根据控件类型决定匹配规则 ---
-                if isinstance(widget, ctk.CTkOptionMenu) and val in ["已勾选", "未勾选"]:
-                    # checkbox 三态匹配：兼容布尔值或字符串 "True"/"1" 等
-                    is_checked = str(target_val_raw).lower() in ("true", "1", "yes")
-                    if (val == "已勾选" and not is_checked) or (val == "未勾选" and is_checked):
-                        params_matched = False
-                        break
-                elif isinstance(widget, ctk.CTkOptionMenu):
-                    # combobox 精确匹配
-                    if val != target_val:
-                        params_matched = False
-                        break
+                if norm_sc_key and norm_key in norm_sc_key:
+                    matched_fields.add("key")
                 else:
-                    # entry, multiline, slider 子串包含匹配
-                    if val.lower() not in target_val.lower():
-                        params_matched = False
-                        break
+                    is_match = False
 
-            if not params_matched:
-                continue
+            # 5.3 备注匹配
+            if is_match and desc:
+                if desc in shortcut.get("description", "").lower():
+                    matched_fields.add("desc")
+                else:
+                    is_match = False
 
-            # 所有条件满足，加入结果集
-            matchedShortcuts.append(shortcut)
+            # 5.4 动作类型匹配
+            if is_match and actionDef:
+                if shortcut.get("action", "") == actionDef.key:
+                    matched_fields.add("action")
+                else:
+                    is_match = False
 
-        # 4. 排序
-        matchedShortcuts.sort(key=self._shortcutSortKey)
+            # 5.5 动作参数匹配
+            if is_match and param_conditions:
+                sc_params = shortcut.get("actionParams", {})
+                for param_key, (widget, val) in param_conditions.items():
+                    target_val_raw = sc_params.get(param_key, "")
+                    target_val = str(target_val_raw)
+                    param_matched = False
 
-        # 5. 渲染结果
+                    if isinstance(widget, ctk.CTkOptionMenu) and val in ["已勾选", "未勾选"]:
+                        is_checked = str(target_val_raw).lower() in ("true", "1", "yes")
+                        if (val == "已勾选" and is_checked) or (val == "未勾选" and not is_checked):
+                            param_matched = True
+                    elif isinstance(widget, ctk.CTkOptionMenu):
+                        if val == target_val:
+                            param_matched = True
+                    else:
+                        if val.lower() in target_val.lower():
+                            param_matched = True
+
+                    if param_matched:
+                        matched_fields.add(f"param_{param_key}")
+                    else:
+                        is_match = False
+                        break  # 只要有一个参数不匹配，直接跳出参数循环
+
+            # 只有所有填写条件都满足，才加入结果
+            if is_match:
+                matchedShortcuts.append({"shortcut": shortcut, "matched_fields": matched_fields})
+
+        # 6. 排序
+        matchedShortcuts.sort(key=lambda x: self._shortcutSortKey(x["shortcut"]))
+
+        # 7. 渲染结果
         self._renderResults(matchedShortcuts)
 
-    def onReset(self):
-        """重置所有搜索条件并重新执行空搜索"""
-        self.nameEntry.delete(0, "end")
-        self.keyEntry.delete(0, "end")
-        self.descEntry.delete("1.0", "end")
-        self.actionOption.set("（不限）") # 会自动触发 _onActionChanged 清空参数区
-        self.onSearch() # 立即执行一次空搜索
-
     def _renderResults(self, matchedShortcuts):
-        """将匹配结果渲染到结果框中，采用多行卡片式布局"""
+        """将匹配结果渲染到结果框中，采用多行卡片式布局，带智能高亮"""
         self.resultTextbox.configure(state="normal")
         self.resultTextbox.delete("1.0", "end")
 
-        if not matchedShortcuts:
-            self.resultTextbox.insert("end", "未找到匹配的快捷键。")
-        else:
-            self.resultTextbox.insert("end", f"共找到 {len(matchedShortcuts)} 条匹配\n\n")
+        # --- 1. 配置颜色 Tag ---
+        self.resultTextbox.tag_config("key_tag", foreground="#569CD6")  # 键名：淡蓝色
+        self.resultTextbox.tag_config("highlight_tag", background="yellow", foreground="black")  # 高亮：黄底黑字
 
-            for sc in matchedShortcuts:
+        # --- 2. 收集所有搜索关键词，用于后续高亮 ---
+        search_terms = []
+        name_val = self.nameEntry.get().strip()
+        key_val = self.keyEntry.get().strip()
+        desc_val = self.descEntry.get("1.0", "end-1c").strip()
+        if name_val: search_terms.append(name_val)
+        if key_val: search_terms.append(key_val)
+        if desc_val: search_terms.append(desc_val)
+
+        for param_key, widget in self._paramWidgets.items():
+            if isinstance(widget, ctk.CTkTextbox):
+                val = widget.get("1.0", "end-1c").strip()
+            elif isinstance(widget, ctk.CTkOptionMenu):
+                val = widget.get()
+            elif isinstance(widget, ctk.CTkEntry):
+                val = widget.get().strip()
+            else:
+                val = ""
+            if val and val != "（不限）":
+                search_terms.append(str(val))
+
+        # --- 3. 辅助函数：插入文本并自动高亮包含的关键词 ---
+        # 【修复】：将 matched_fields 作为参数传入，避免错误引用第一条结果的数据
+        def insert_text(text, tags=None, is_key=False, field_name=None, current_matched_fields=None):
+            start_index = self.resultTextbox.index("end-1c")
+            self.resultTextbox.insert("end", text, tags)
+            end_index = self.resultTextbox.index("end-1c")
+
+            # 如果是键名，且这个键名对应的字段确实参与了匹配，就高亮
+            if is_key and field_name and current_matched_fields:
+                if field_name in current_matched_fields:
+                    self.resultTextbox.tag_add("highlight_tag", start_index, end_index)
+
+            # 在刚插入的文本范围内搜索关键词并打高亮标签
+            for term in search_terms:
+                if not term: continue
+                pos = self.resultTextbox.search(term, start_index, end_index, nocase=True)
+                while pos:
+                    term_end = f"{pos}+{len(term)}c"
+                    self.resultTextbox.tag_add("highlight_tag", pos, term_end)
+                    pos = self.resultTextbox.search(term, term_end, end_index, nocase=True)
+
+        # --- 4. 开始渲染 ---
+        if not matchedShortcuts:
+            insert_text("未找到匹配的快捷键。")
+        else:
+            insert_text(f"共找到 {len(matchedShortcuts)} 条匹配\n\n")
+
+            for item in matchedShortcuts:
+                sc = item["shortcut"]
+                matched_fields = item["matched_fields"]  # 当前项的匹配字段集合
+
                 sc_id = sc.get('id', '')
                 sc_name = sc.get('name', '')
                 sc_key = sc.get('keyCombination', '')
                 sc_desc = sc.get('description', '')
-
-                # 动作类型转显示名，找不到用原始 key
                 sc_action_key = sc.get('action', '')
-                action_def = getActionDefByKey(sc_action_key)
-                sc_action_display = action_def.displayName if action_def else sc_action_key
 
-                # 渲染基础信息
-                self.resultTextbox.insert("end",
-                                          f"ID: {sc_id}\n"
-                                          f"名字: {sc_name}\n"
-                                          f"快捷键: {sc_key}\n"
-                                          f"备注: {sc_desc}\n"
-                                          f"动作类型: {sc_action_display}\n"
-                                          )
+                action_def = getActionDefByKey(sc_action_key)
+                if action_def:
+                    sc_action_display = action_def.displayName.replace('\n', ' ')
+                else:
+                    sc_action_display = sc_action_key
+
+                    # 渲染基础信息 (传入 current_matched_fields=matched_fields)
+                insert_text("ID: ", "key_tag", is_key=True, field_name="id", current_matched_fields=matched_fields)
+                insert_text(f"{sc_id}\n")
+                insert_text("名字: ", "key_tag", is_key=True, field_name="name", current_matched_fields=matched_fields)
+                insert_text(f"{sc_name}\n")
+                insert_text("快捷键: ", "key_tag", is_key=True, field_name="key", current_matched_fields=matched_fields)
+                insert_text(f"{sc_key}\n")
+                insert_text("备注: ", "key_tag", is_key=True, field_name="desc", current_matched_fields=matched_fields)
+                insert_text(f"{sc_desc}\n")
+                insert_text("动作类型: ", "key_tag", is_key=True, field_name="action",
+                            current_matched_fields=matched_fields)
+                insert_text(f"{sc_action_display}\n")
 
                 # 渲染动作参数
                 sc_params = sc.get('actionParams', {})
                 if not sc_params or not action_def:
-                    self.resultTextbox.insert("end", "动作参数: （无）\n")
+                    insert_text("动作参数: ", "key_tag", is_key=True, field_name="params",
+                                current_matched_fields=matched_fields)
+                    insert_text("（无）\n")
                 else:
-                    self.resultTextbox.insert("end", "动作参数:\n")
-                    # 遍历 ActionDef 里的 ParamSpec 来获取 label，使展示更规范
+                    insert_text("动作参数:\n", "key_tag", is_key=True, field_name="params",
+                                current_matched_fields=matched_fields)
                     for spec in action_def.params:
                         val = sc_params.get(spec.key, "（未设置）")
-
-                        # 格式化 checkbox 类型的值，方便阅读
                         if spec.widget == "checkbox":
                             if str(val).lower() in ("true", "1", "yes"):
                                 val_str = "已勾选"
@@ -231,29 +307,16 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
                             else:
                                 val_str = str(val)
                         else:
-                            # 对于空的参数值，统一显示 （未设置）
                             val_str = str(val) if val != "" else "（未设置）"
 
-                        self.resultTextbox.insert("end", f"  {spec.label}: {val_str}\n")
+                        clean_label = spec.label.replace('\n', ' ')
+                        insert_text(f" {clean_label}: ", "key_tag", is_key=True, field_name=f"param_{spec.key}",
+                                    current_matched_fields=matched_fields)
+                        insert_text(f"{val_str}\n")
 
-                self.resultTextbox.insert("end", "----------------------------------------\n")
+                insert_text("----------------------------------------\n")
 
         self.resultTextbox.configure(state="disabled")
-
-    @staticmethod
-    def _shortcutSortKey(shortcut):
-        """用于排序快捷键列表，优先按数字ID排序，其次按字符串ID排序 (从主页复制，避免循环导入)"""
-        shortcutId = shortcut.get("id", 0)
-        if isinstance(shortcutId, int):
-            return (0, shortcutId)
-        if isinstance(shortcutId, str):
-            if shortcutId.isdigit():
-                return (0, int(shortcutId))
-            suffix = shortcutId.rsplit("_", 1)[-1]
-            if suffix.isdigit():
-                return (0, int(suffix))
-            return (1, shortcutId)
-        return (2, str(shortcutId))
 
     def _onActionChanged(self, displayName: str, presetParams: dict | None = None):
         """当下拉框动作改变时，动态重建参数区域"""
@@ -323,3 +386,18 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
         else:
             w = ctk.CTkEntry(self.paramsFrame, font=("微软雅黑", 13), placeholder_text=spec.placeholder)
             return w
+
+    @staticmethod
+    def _shortcutSortKey(shortcut):
+        """用于排序快捷键列表，优先按数字ID排序，其次按字符串ID排序 (从主页复制，避免循环导入)"""
+        shortcutId = shortcut.get("id", 0)
+        if isinstance(shortcutId, int):
+            return (0, shortcutId)
+        if isinstance(shortcutId, str):
+            if shortcutId.isdigit():
+                return (0, int(shortcutId))
+            suffix = shortcutId.rsplit("_", 1)[-1]
+            if suffix.isdigit():
+                return (0, int(suffix))
+            return (1, shortcutId)
+        return (2, str(shortcutId))
