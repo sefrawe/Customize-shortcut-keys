@@ -53,6 +53,8 @@ from pynput import keyboard as pynput_keyboard
 
 from core.configManager import loadWindowSettings, center_window
 
+from utils.keyValidator import validate_key_combination
+
 
 from utils.actionRegistry import (
     getAllActionDisplayNames,
@@ -269,34 +271,51 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         # 1. 收集基本数据
         newName = self.nameEntry.get().strip()
         newKey = self.keyEntry.get().strip()
-        newDesc = self.descriptionEntry.get("1.0", "end-1c").strip()# 获取多行文本框的内容，去掉末尾换行符
+        newDesc = self.descriptionEntry.get("1.0", "end-1c").strip()
+
+        # ==================== 新增：快捷键格式校验 ====================
+        # 统一接收校验结果：是否合法、提示信息、清理后的标准数据
+        is_valid, msg, cleaned_key = validate_key_combination(newKey)
+
+        if not is_valid:
+            # 弹窗询问是否强制保存
+            confirm = messagebox.askyesno(
+                "格式不合法",
+                f"{msg}\n\n不合法的配置可能无法被正常触发。\n是否仍要强制保存？"
+            )
+            if not confirm:
+                # 用户选择“否”，返回编辑状态，不关闭窗口
+                return
+                # 用户选择“是”，使用清理过的数据继续往下走
+            newKey = cleaned_key
+        else:
+            # 校验通过，使用标准化后的数据
+            newKey = cleaned_key
+        # ============================================================
 
         # 2. 收集动作数据
         displayName = self.actionOption.get()
         actionDef = getActionDefByDisplayName(displayName)
         newAction = actionDef.key if actionDef else ""
         newActionParams = {}
-
         if actionDef:
             for key, widget in self._paramWidgets.items():
                 spec = next((p for p in actionDef.params if p.key == key), None)
-
                 # 根据控件类型读取值
                 if isinstance(widget, ctk.CTkTextbox):
                     val = widget.get("1.0", "end-1c").strip()
                 elif isinstance(widget, ctk.CTkCheckBox):
                     val = bool(widget.get())
                 elif isinstance(widget, ctk.CTkFrame) and hasattr(widget, '_slider'):
-                    val = str(int(widget._slider.get()))
-                # 转为 True/False
-                else:  # CTkEntry 和 CTkOptionMenu
+                    val = str(int(widget._slider.get()))  # 转为 True/False
+                else:
+                    # CTkEntry 和 CTkOptionMenu
                     val = widget.get().strip()
 
                 # 必填校验（复选框不需要校验）
                 if spec and spec.required and spec.widget != "checkbox" and not val:
                     messagebox.showerror("错误", f"参数 '{spec.label}' 不能为空！")
                     return
-
                 newActionParams[key] = val
 
         # 3. 回写到 shortcut 字典
