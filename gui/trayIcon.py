@@ -52,7 +52,6 @@ class TrayIconManager:
 
         # 2. 构建二级菜单项（方案列表）
         submenu_items = []
-        # 添加"无"选项 —— checked 用 lambda 返回布尔值
         submenu_items.append(
             pystray.MenuItem(
                 "（无）",
@@ -61,7 +60,6 @@ class TrayIconManager:
                 checked=lambda item: current_name is None
             )
         )
-        # 添加所有方案
         for scheme in getShortcutSchemes(configDirectory):
             name = scheme["name"]
             submenu_items.append(
@@ -73,17 +71,26 @@ class TrayIconManager:
                 )
             )
 
-        # 3. 组装并返回主菜单
+        # 3. 获取当前监听状态，决定显示什么文字
+        is_paused = getattr(self.main_window, 'is_listening_paused', False)
+        listen_text = "恢复监听" if is_paused else "暂停监听"
+
+        # 4. 组装并返回主菜单
         return [
             pystray.MenuItem("显示主窗口", self._on_show, default=True),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem(
                 f"当前启用: {current_name}" if current_name else "启用方案选择 ▶",
-                pystray.Menu(*submenu_items)  # 直接把 Menu 作为 action 传入，pystray 会自动识别为子菜单
+                pystray.Menu(*submenu_items)
             ),
             pystray.Menu.SEPARATOR,
+            pystray.MenuItem(listen_text, self._on_toggle_listening),  # 新增的监听切换项
             pystray.MenuItem("退出程序", self._on_quit)
         ]
+
+    def _on_toggle_listening(self, icon=None, item=None):
+        """点击暂停/恢复监听时的回调"""
+        self.main_window.after(0, self.main_window.toggle_listening_status)
 
     def _on_switch(self, icon=None, item=None):
         """点击二级菜单项时的回调，将指令抛给主线程"""
@@ -113,3 +120,4 @@ class TrayIconManager:
 
     def run(self):
         self.icon.run()
+

@@ -209,15 +209,33 @@ ACTION_REGISTRY: list[ActionDef] = [
                       placeholder="左上角为原点,x向右y向下为正,支持负数")
         ]
     ),
+    ActionDef(
+        key="appControl",
+        displayName="操作软件自身\n(配置切换方案记得在其他方案里也设置，否则自己容易犯懵，\n推荐使用宏录制与回放进行复杂切换)",
+        params=[
+            ParamSpec(
+                key="command",
+                label="控制指令",
+                widget="combobox",
+                options=[
+                    "显示主窗口",
+                    "隐藏主窗口",
+                    "刷新执行器",
+                    "退出软件",
+                    "切换到上一个方案",
+                    "切换到下一个方案"
+                ],
+                default="显示主窗口",
+                required=True
+            )
+        ]
+    ),
 
 ]
 
 # 方便快速查询的映射字典
 _ACTION_MAP_BY_KEY: dict[str, ActionDef] = {a.key: a for a in ACTION_REGISTRY}
 _ACTION_MAP_BY_NAME: dict[str, ActionDef] = {a.displayName: a for a in ACTION_REGISTRY}
-# print的结果是
-# {'': ActionDef(key='', displayName='（无动作）', params=[]), 'pasteText': ActionDef(key='pasteText', displayName='粘贴文本', params=[ParamSpec(key='text', label='要粘贴的文本', widget='multiline', default='', required=True)])}
-# {'（无动作）': ActionDef(key='', displayName='（无动作）', params=[]), '粘贴文本': ActionDef(key='pasteText', displayName='粘贴文本', params=[ParamSpec(key='text', label='要粘贴的文本', widget='multiline', default='', required=True)])}
 
 def getAllActionDisplayNames() -> list[str]:
     """获取所有动作的展示名称，用于填充下拉框"""
@@ -237,14 +255,3 @@ def registerActionHandler(key: str, handler: Callable[[dict], None]):
     if actionDef:
         actionDef.handler = handler
 
-# print结果是
-# ['（无动作）', '粘贴文本']
-# ActionDef(key='pasteText', displayName='粘贴文本', params=[ParamSpec(key='text', label='要粘贴的文本', widget='multiline', default='', required=True)])
-# ActionDef(key='pasteText', displayName='粘贴文本', params=[ParamSpec(key='text', label='要粘贴的文本', widget='multiline', default='', required=True)])
-
-# if __name__ == "__main__":
-#     print(_ACTION_MAP_BY_KEY)
-#     print(_ACTION_MAP_BY_NAME)
-#     print(getAllActionDisplayNames())
-#     print(getActionDefByKey("pasteText"))
-#     print(getActionDefByDisplayName("粘贴文本"))

@@ -464,6 +464,27 @@ def doMouseDrag(params: dict, context: dict | None = None):
     time.sleep(0.05)
 
 
+def doAppControl(params: dict, context: dict | None = None):
+    """
+    动作：操作软件自身
+    这是一个特殊的动作，它本身不直接操作 UI 或配置，
+    而是通过 context 中的 app_control_callback 将指令抛回给主线程执行，
+    从而彻底规避跨线程操作 Tkinter UI 导致的崩溃问题。
+    """
+    command = params.get("command", "")
+    if not command:
+        return
+
+    # 从上下文中获取主线程注入的回调函数
+    app_control_callback = (context or {}).get("app_control_callback")
+
+    if app_control_callback:
+        # 将指令字符串抛回主线程处理
+        app_control_callback(command)
+    else:
+        print("警告：未配置 app_control_callback，无法执行软件控制指令。")
+
+
 
 # ==================== 注册 ====================
 
@@ -479,7 +500,7 @@ def initActionHandlers():
     registerActionHandler("mouseClick", doMouseClick)
     registerActionHandler("mouseScroll", doMouseScroll)
     registerActionHandler("mouseDrag", doMouseDrag)
-
+    registerActionHandler("appControl", doAppControl)
     for action_def in ACTION_REGISTRY:
         # 跳过 "（无动作）" 这个特殊动作
         if action_def.key == "":

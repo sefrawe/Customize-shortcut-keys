@@ -13,7 +13,7 @@ from gui.HomePages import HomePage
 from gui.NewShortcutSchemePage import NewShortcutSchemePage
 from gui.SettingsPage import SettingsPage
 from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSchemes, getAllSchemesWithShortcuts, \
-    analyzeConflicts
+    analyzeConflicts, getStartupEnabledShortcutScheme
 
 import threading
 
@@ -35,6 +35,9 @@ class MainWindow(ctk.CTk):
         self.executor = executor
 
         self.conflict_reports_cache = {}
+
+        self.is_listening_paused = False  # 监听器暂停状态标志，供托盘读取
+        
         # 新增：持有托盘引用
         self.tray_icon = None
 
@@ -154,7 +157,8 @@ class MainWindow(ctk.CTk):
         # 新增：向执行器注入跨线程确认弹窗回调
         if self.executor:
             self.executor.setConfirmCallback(self.show_confirm_dialog)
-
+            # 注入操作软件自身的回调
+            self.executor.setAppControlCallback(self._app_control_callback)
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):
@@ -387,6 +391,60 @@ class MainWindow(ctk.CTk):
         # 抛回主线程执行
         self.after(0, _ask)
 
+    def _app_control_callback(self, command: str):
+        """
+        供子线程调用的软件控制回调。
+        这是一个“桥梁”方法，接收到子线程的指令后，立刻通过 self.after(0, ...)
+        将实际工作抛回 Tkinter 主线程的事件队列中排队执行，保证线程安全。
+        """
+        self.after(0, lambda: self._handle_app_control(command))
+
+    def _handle_app_control(self, command: str):
+        """
+        [仅在主线程执行] 实际处理各项软件控制指令。
+        Tkinter 的 after 机制保证了此方法内部的代码是串行执行的，无需额外加锁。
+        """
+        if command == "显示主窗口":
+            self.show_window()
+
+        elif command == "隐藏主窗口":
+            self.hide_window()
+
+        elif command == "刷新执行器":
+            # 相当于触发了全局联动刷新
+            self.refreshExecutor()
+
+        elif command == "退出软件":
+            self.quit_app()
+
+        elif command in ("切换到上一个方案", "切换到下一个方案"):
+            # 1. 获取所有方案，按名字字母排序（与左侧导航栏顺序一致）
+            all_schemes = getShortcutSchemes(configDirectory)
+            if not all_schemes:
+                return  # 没有任何方案，无法切换
+
+            sorted_schemes = sorted(all_schemes, key=lambda x: x["name"])
+            names_list = [s["name"] for s in sorted_schemes]
+
+            # 2. 找到当前启用的方案
+            current_enabled = getStartupEnabledShortcutScheme(configDirectory)
+            current_name = current_enabled["name"] if current_enabled else None
+
+            # 3. 计算目标方案的索引
+            if current_name not in names_list:
+                # 当前没有启用方案，或者方案名不在列表中，默认切到第一个
+                target_index = 0
+            else:
+                current_index = names_list.index(current_name)
+                if command == "切换到上一个方案":
+                    target_index = (current_index - 1) % len(names_list)
+                else:  # 切换到下一个方案
+                    target_index = (current_index + 1) % len(names_list)
+
+            target_name = names_list[target_index]
+
+            # 4. 复用托盘切换方案的方法：互斥修改配置并刷新UI和执行器
+            self.switch_scheme_from_tray(target_name)
 
     def set_tray_icon(self, tray_icon):
         """绑定托盘管理器实例"""
@@ -438,6 +496,22 @@ class MainWindow(ctk.CTk):
         # 而 refreshExecutor() 内部又调用了 refresh_all_conflict_status()
         # 所以一行代码，配置写入、执行器重载、UI状态刷新、冲突重算全搞定了
         self.handleSchemeStartupChanged()
+
+    def toggle_listening_status(self):
+        """切换全局键盘监听状态（供托盘调用）"""
+        if self.is_listening_paused:
+            # 当前是暂停状态，需要恢复：强制重启监听器作为兜底
+            if self.executor:
+                self.executor.restart()
+            self.is_listening_paused = False
+        else:
+            # 当前是正常状态，需要暂停
+            if self.executor:
+                self.executor.stop()
+            self.is_listening_paused = True
+
+
+
 
 
 

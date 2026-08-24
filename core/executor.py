@@ -64,7 +64,9 @@ class Executor:
 
         # 跨线程确认弹窗回调 
         self.confirmCallback: Callable[[str, list, threading.Event], None] | None = None
-        
+
+        #  操作软件自身的跨线程回调
+        self.appControlCallback: Callable[[str], None] | None = None
 
         # 定义一个可选的字典，用于存储当前启用的快捷键方案。如果没有启用的方案，则为 None。
         self.activeScheme: dict | None = None
@@ -102,6 +104,11 @@ class Executor:
     def setConfirmCallback(self, callback: Callable[[str, list, threading.Event], None]):
         """设置跨线程确认弹窗回调，供动作执行器在需要用户确认时调用。"""
         self.confirmCallback = callback
+
+    def setAppControlCallback(self, callback: Callable[[str], None]):
+        """设置操作软件自身的跨线程回调，供动作执行器在需要控制软件时调用。"""
+        self.appControlCallback = callback
+
 
 
     def showTip(self, text, title="提示"):
@@ -368,9 +375,10 @@ class Executor:
                 return
 
             try:
-                # ★ 修改：构建 context 并传递给 handler ★
+                # 构建 context 并传递给 handler，新增 appControlCallback
                 context = {
-                    "confirm_callback": self.confirmCallback
+                    "confirm_callback": self.confirmCallback,
+                    "app_control_callback": self.appControlCallback
                 }
                 actionDef.handler(actionParams, context)
             except Exception as e:
