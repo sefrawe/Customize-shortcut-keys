@@ -62,8 +62,9 @@ def main():
     if "--minimized" in sys.argv or "--silent" in sys.argv:
         app.withdraw() # 不显示主窗口，直接驻留托盘
     else:
+        pass
         # 只有非静默启动时才最大化
-        app.after(100, lambda: app.state("zoomed"))
+        # app.after(100, lambda: app.state("zoomed"))
 
     executor.start()
 

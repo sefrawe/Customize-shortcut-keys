@@ -51,6 +51,9 @@ import customtkinter as ctk
 from pynput import mouse as pynput_mouse
 from pynput import keyboard as pynput_keyboard
 
+from core.configManager import loadWindowSettings, center_window
+
+
 from utils.actionRegistry import (
     getAllActionDisplayNames,
     getActionDefByDisplayName,
@@ -81,8 +84,22 @@ class ShortcutEditWindow(ctk.CTkToplevel):
 
         # 设置窗口标题和尺寸
         self.title("编辑快捷键：id={}。此窗口涉及修改配置文件，不允许最小化和对软件进行其他操作".format(shortcutId))  # 设置窗口标题，显示要编辑的快捷键的id
-        self.minsize(600, 400)  # 设置窗口最小尺寸为600x400
-        self.geometry("600x400")  # 设置窗口初始尺寸为600x400
+
+        # 固定编辑窗口的最小尺寸
+        self.minsize(600, 400)
+
+        # 读取全局配置，决定编辑窗口的初始大小和状态
+        win_settings = loadWindowSettings().get("editWindow", {})
+        is_maximized = win_settings.get("maximized", False)
+        win_width = win_settings.get("width", 600)
+        win_height = win_settings.get("height", 400)
+
+        if is_maximized:
+            # 弹窗最大化
+            self.state("zoomed")
+        else:
+            # 按配置居中显示
+            center_window(self, win_width, win_height)
 
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)  # 滚动区域占满

@@ -1,7 +1,8 @@
 '''
 快捷键搜索窗口
 '''
-from utils.actionRegistry import getAllActionDisplayNames, getActionDefByDisplayName, ParamSpec
+from core.configManager import loadWindowSettings, center_window
+
 from utils.actionRegistry import getAllActionDisplayNames, getActionDefByDisplayName, getActionDefByKey, ParamSpec
 from utils.shortcutUtils import normalize_key_combination
 
@@ -90,8 +91,22 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
         self.config = config
         self._paramWidgets: dict = {}
 
-        self.geometry("600x600")
+        # 固定搜索窗口的最小尺寸
         self.minsize(400, 400)
+
+        # 读取全局配置，决定搜索窗口的初始大小和状态
+        win_settings = loadWindowSettings().get("searchWindow", {})
+        is_maximized = win_settings.get("maximized", False)
+        win_width = win_settings.get("width", 600)
+        win_height = win_settings.get("height", 600)
+
+        if is_maximized:
+            # 弹窗最大化
+            self.state("zoomed")
+        else:
+            # 按配置居中显示
+            center_window(self, win_width, win_height)
+
         self.title("搜索快捷键：根据名字、快捷键组合、备注、动作类型、动作参数进行搜索")
 
         self.grid_columnconfigure(0, weight=1)

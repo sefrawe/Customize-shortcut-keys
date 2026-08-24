@@ -444,3 +444,63 @@ def saveUserBlacklist(blacklist: dict):
     f.seek(0)
     json.dump(globalSettings, f, ensure_ascii=False, indent=2)
     f.truncate()
+
+
+# ==================== 窗口大小设置管理 ====================
+
+# 默认窗口配置常量，防止旧版本配置文件缺少字段时报错
+DEFAULT_WINDOW_SETTINGS = {
+    "mainWindow": {"maximized": True, "width": 1000, "height": 800},
+    "editWindow": {"maximized": False, "width": 600, "height": 400},
+    "searchWindow": {"maximized": False, "width": 600, "height": 600}
+}
+
+
+def loadWindowSettings():
+    """从 Global Settings.json 读取窗口大小配置"""
+    with open(globalSettingspath, "r", encoding="utf-8") as f:
+        globalSettings = json.load(f)
+
+    # 如果配置文件中还没有 windowSettings 字段，直接返回默认值
+    if "windowSettings" not in globalSettings:
+        return DEFAULT_WINDOW_SETTINGS
+
+    settings = globalSettings["windowSettings"]
+    # 安全校验：补全可能缺失的字段，防止旧版本配置导致 KeyError
+    for win_key, default_val in DEFAULT_WINDOW_SETTINGS.items():
+        if win_key not in settings:
+            settings[win_key] = default_val
+        else:
+            for k, v in default_val.items():
+                if k not in settings[win_key]:
+                    settings[win_key][k] = v
+    return settings
+
+
+def saveWindowSettings(settings: dict):
+    """将窗口大小配置保存到 Global Settings.json"""
+    with open(globalSettingspath, "r+", encoding="utf-8") as f:
+        globalSettings = json.load(f)
+        globalSettings["windowSettings"] = settings
+        f.seek(0)
+        json.dump(globalSettings, f, ensure_ascii=False, indent=2)
+        f.truncate()
+
+
+def center_window(window, width, height):
+    """
+    通用工具函数：将窗口居中显示在屏幕上
+    参数 window: CTk 或 CTkToplevel 实例
+    参数 width, height: 期望的窗口宽高
+    """
+    # 1. 先更新窗口的内部状态，确保能获取到准确的屏幕尺寸
+    window.update_idletasks()
+    screen_width = window.winfo_screenwidth()
+    screen_height = window.winfo_screenheight()
+
+    # 2. 计算居中坐标 (左上角坐标)
+    x = (screen_width - width) // 2
+    y = (screen_height - height) // 2
+
+    # 3. 设置窗口大小和位置 (格式: "宽x高+X坐标+Y坐标")
+    window.geometry(f"{width}x{height}+{x}+{y}")

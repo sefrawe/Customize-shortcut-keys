@@ -9,6 +9,8 @@ from core.configManager import (
     saveThemeToConfig,
     loadUserBlacklist,
     saveUserBlacklist,
+    loadWindowSettings,
+    saveWindowSettings,
 )
 from utils.interpreterRegistry import INTERPRETER_REGISTRY
 from utils.systemUtils import set_auto_start, is_auto_start_enabled
@@ -62,6 +64,102 @@ class SettingsPage(ctk.CTkFrame):
         self.autoStartSwitch.pack(side="right")
         if is_auto_start_enabled():
             self.autoStartSwitch.select()
+
+        # ==================== 窗口大小设置 ====================
+        self.windowSizeLabel = ctk.CTkLabel(
+            self.scrollFrame, text="窗口大小设置", font=("微软雅黑", 24)
+        )
+        self.windowSizeLabel.pack(pady=(40, 5))
+
+        # 增加全局提示：未勾选最大化时生效，修改后需保存
+        ctk.CTkLabel(
+            self.scrollFrame,
+            text="* 宽高设置仅在未勾选“启动时最大化”时生效。修改后请点击下方保存按钮。",
+            font=("微软雅黑", 12),
+            text_color="#FFA500",
+            anchor="w"
+        ).pack(pady=(0, 10), padx=20, fill="x")
+
+        # 加载当前已有的窗口配置
+        current_win_settings = loadWindowSettings()
+        self._win_ui_vars = {}  # 用于存储每个窗口对应的UI控件引用，方便保存时读取
+
+        # --- 循环创建三个窗口的配置UI ---
+        # config_key: 配置文件里的键名, title: 界面显示的名称, min_w/min_h: 允许的最小宽高
+        win_configs = [
+            {"key": "mainWindow", "title": "主窗口", "min_w": 1000, "min_h": 800},
+            {"key": "editWindow", "title": "编辑窗口", "min_w": 600, "min_h": 400},
+            {"key": "searchWindow", "title": "搜索窗口", "min_w": 400, "min_h": 400}
+        ]
+
+        for cfg in win_configs:
+            win_key = cfg["key"]
+            win_data = current_win_settings.get(win_key, {})
+
+            # 单个窗口的容器
+            win_frame = ctk.CTkFrame(self.scrollFrame, fg_color="transparent")
+            win_frame.pack(pady=10, padx=20, fill="x")
+
+            # 标题与最大化勾选框
+            header_frame = ctk.CTkFrame(win_frame, fg_color="transparent")
+            header_frame.pack(fill="x")
+            ctk.CTkLabel(header_frame, text=cfg["title"], font=("微软雅黑", 16, "bold")).pack(side="left", padx=(0, 10))
+
+            # 最大化勾选框
+            max_switch = ctk.CTkCheckBox(
+                header_frame, text="启动时最大化", font=("微软雅黑", 14)
+            )
+            if win_data.get("maximized", False):
+                max_switch.select()
+            max_switch.pack(side="left")
+
+            # 宽高输入区
+            size_frame = ctk.CTkFrame(win_frame, fg_color="transparent")
+            size_frame.pack(fill="x", pady=(5, 0))
+
+            # 宽度 (对应 X 轴)
+            ctk.CTkLabel(size_frame, text="宽度:", font=("微软雅黑", 14)).pack(side="left", padx=(0, 5))
+            w_entry = ctk.CTkEntry(size_frame, width=70, font=("微软雅黑", 14))
+            w_entry.insert(0, str(win_data.get("width", 1000)))
+            w_entry.pack(side="left", padx=(0, 5))
+            ctk.CTkLabel(size_frame, text=f"(X轴, 最小{cfg['min_w']}像素)", font=("微软雅黑", 12),
+                         text_color="gray").pack(side="left", padx=(0, 20))
+
+            # 高度 (对应 Y 轴)
+            ctk.CTkLabel(size_frame, text="高度:", font=("微软雅黑", 14)).pack(side="left", padx=(0, 5))
+            h_entry = ctk.CTkEntry(size_frame, width=70, font=("微软雅黑", 14))
+            h_entry.insert(0, str(win_data.get("height", 800)))
+            h_entry.pack(side="left", padx=(0, 5))
+            ctk.CTkLabel(size_frame, text=f"(Y轴, 最小{cfg['min_h']}像素)", font=("微软雅黑", 12),
+                         text_color="gray").pack(side="left")
+
+            # 保存时需要用到的提示标签 (仅主窗口有)
+            if win_key == "mainWindow":
+                ctk.CTkLabel(
+                    win_frame, text="* 主窗口大小修改需重启软件生效",
+                    font=("微软雅黑", 12), text_color="#FF6B6B"
+                ).pack(anchor="w", pady=(2, 0))
+
+            # 把控件存起来，保存时用
+            self._win_ui_vars[win_key] = {
+                "max_switch": max_switch,
+                "w_entry": w_entry,
+                "h_entry": h_entry,
+                "min_w": cfg["min_w"],
+                "min_h": cfg["min_h"]
+            }
+
+        # 保存窗口设置按钮
+        self.saveWinSizeBtn = ctk.CTkButton(
+            self.scrollFrame, text="保存窗口设置", command=self.saveWindowSettings, font=("微软雅黑", 14)
+        )
+        self.saveWinSizeBtn.pack(pady=(0, 20), padx=20, anchor="e")
+
+        # 窗口大小保存状态提示
+        self.winSizeSaveStatus = ctk.CTkLabel(
+            self.scrollFrame, text="", font=("微软雅黑", 12), text_color="green", anchor="w"
+        )
+        self.winSizeSaveStatus.pack(pady=(0, 2), padx=20, fill="x")
 
         # ==================== 黑名单管理 ====================
         self.blacklistLabel = ctk.CTkLabel(
@@ -244,3 +342,39 @@ class SettingsPage(ctk.CTkFrame):
                 self.autoStartSwitch.deselect()
             else:
                 self.autoStartSwitch.select()
+
+    def saveWindowSettings(self):
+        """保存窗口大小设置"""
+        settings_to_save = {}
+
+        # 遍历刚才存的UI控件，收集数据
+        for win_key, ui_refs in self._win_ui_vars.items():
+            is_max = ui_refs["max_switch"].get() == 1
+
+            # 读取并校验宽高
+            try:
+                w = int(ui_refs["w_entry"].get())
+                h = int(ui_refs["h_entry"].get())
+            except ValueError:
+                self.winSizeSaveStatus.configure(text=f"❌ 保存失败: 宽度和高度必须是整数", text_color="red")
+                return
+
+            # 强制约束最小值，防止UI崩溃
+            min_w = ui_refs["min_w"]
+            min_h = ui_refs["min_h"]
+            if w < min_w: w = min_w
+            if h < min_h: h = min_h
+
+            settings_to_save[win_key] = {
+                "maximized": is_max,
+                "width": w,
+                "height": h
+            }
+
+        # 调用 configManager 保存
+        try:
+            saveWindowSettings(settings_to_save)
+            self.winSizeSaveStatus.configure(text="✅ 窗口设置已保存！主窗口修改需重启生效。", text_color="green")
+        except Exception as e:
+            self.winSizeSaveStatus.configure(text=f"❌ 保存失败: {e}", text_color="red")
+

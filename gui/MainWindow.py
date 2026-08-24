@@ -8,7 +8,7 @@ from tkinter import messagebox
 import customtkinter as ctk
 
 from core.configManager import globalSettingspath, configDirectory, createNewShortcutSchemeConfig, \
-    saveShortcutSchemeConfig, changeShortcutSchemeConfig
+    saveShortcutSchemeConfig, changeShortcutSchemeConfig,loadWindowSettings, center_window
 from gui.HomePages import HomePage
 from gui.NewShortcutSchemePage import NewShortcutSchemePage
 from gui.SettingsPage import SettingsPage
@@ -41,12 +41,22 @@ class MainWindow(ctk.CTk):
         # 新增：拦截窗口关闭事件，改为隐藏
         self.protocol("WM_DELETE_WINDOW", self.hide_window)
 
-
-        # 窗口基本设置
         self.title("自定义快捷键工具")
-        self.geometry("1000x800")  # 初始窗口大小
+        # 固定主窗口的最小尺寸，防止用户在设置里填了过小的值导致 UI 崩溃
+        self.minsize(1000, 800)
 
-        self.minsize(1000, 800)  # 窗口最小大小
+        # 读取全局配置，决定主窗口的初始大小和状态
+        win_settings = loadWindowSettings().get("mainWindow", {})
+        is_maximized = win_settings.get("maximized", True)
+        win_width = win_settings.get("width", 1000)
+        win_height = win_settings.get("height", 800)
+
+        if is_maximized:
+            # 延迟100ms最大化，避免在某些系统上启动时被覆盖
+            self.after(100, lambda: self.state("zoomed"))
+        else:
+            # 调用居中工具函数，按用户配置的宽高显示在屏幕中央
+            center_window(self, win_width, win_height)
 
         self._set_appearance_mode(appearanceMode)  # 可选: "light", "dark", "system"
 
