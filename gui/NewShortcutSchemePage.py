@@ -102,7 +102,7 @@ import customtkinter as ctk
 
 class NewShortcutSchemePage(ctk.CTkFrame):
     def __init__(self, master, schemeName=None, onRenamed=None, onStartupChanged=None, onCopied=None, ondeleted=None,
-                 onExecutorRefresh=None, **kwargs):
+                 onExecutorRefresh=None,executor=None, **kwargs):
         # on*ed用于回调
         # ← 新增 on*ed 回调参数
         # ← schemeName 单独拎出来
@@ -113,6 +113,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.onCopied = onCopied
         self.onDeleted = ondeleted
         self.onExecutorRefresh = onExecutorRefresh
+        self.executor = executor
         self._save_after_id = None  # 防抖计时器ID(用于自动保存快捷键方案备注)
 
         self._searchWindows = []  # 跟踪当前已打开的搜索窗口
@@ -557,7 +558,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         if not shortcut:
             messagebox.showerror("错误", f"未找到快捷键 ID {shortcutId} 的配置。")
             return
-        editWindow = ShortcutEditWindow(self, shortcut)
+        editWindow = ShortcutEditWindow(self, shortcut, executor=self.executor)
         editWindow.grab_set()
         self.wait_window(editWindow)
 

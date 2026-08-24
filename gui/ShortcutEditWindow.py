@@ -47,6 +47,10 @@
 from tkinter import messagebox
 
 import customtkinter as ctk
+
+from pynput import mouse as pynput_mouse
+from pynput import keyboard as pynput_keyboard
+
 from utils.actionRegistry import (
     getAllActionDisplayNames,
     getActionDefByDisplayName,
@@ -57,13 +61,15 @@ from utils.actionRegistry import (
 
 
 class ShortcutEditWindow(ctk.CTkToplevel):
-    def __init__(self, parent, shortcut):  # 参数分别为父窗口和要编辑的快捷键对象
+    def __init__(self, parent, shortcut,executor=None):  # 参数分别为父窗口和要编辑的快捷键对象
         super().__init__(parent)  # 调用父类的构造函数，传入父窗口作为参数
         self.shortcut = shortcut  # 将要编辑的快捷键对象存储在实例变量中
         # 存储当前动态生成的参数控件，用于最后保存时读取值
         self._paramWidgets: dict = {}
 
         self.saved = False  # 标记是否保存了修改，初始为False
+
+        self.executor = executor# 执行器，获取坐标要暂停监听，所以这里传入
 
         # 从快捷键对象中获取旧值
         shortcutId = shortcut.get("id", 0)
@@ -159,7 +165,14 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.buttonFrame = ctk.CTkFrame(self, fg_color="transparent")
         self.buttonFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
 
-        ctk.CTkButton(self.buttonFrame, text="保存", command=self.onSave).pack(side="left", padx=5)#side可以填"left"、"right"、"top"、"bottom"，默认是"top"
+        ctk.CTkButton(self.buttonFrame, text="保存", command=self.onSave).pack(side="left", padx=5)
+
+        self.getCoordBtn = ctk.CTkButton(
+            self.buttonFrame, text="获取鼠标坐标", command=self.start_coord_capture,
+            font=("微软雅黑", 14),
+            # fg_color="#4ECDC4", hover_color="#3CB8B0"
+        )
+        self.getCoordBtn.pack(side="left", padx=5)
         ctk.CTkButton(self.buttonFrame, text="取消", fg_color="#A30000", hover_color="#7A0000",
                       command=self.destroy).pack(side="left", padx=5)
 
@@ -213,6 +226,20 @@ class ShortcutEditWindow(ctk.CTkToplevel):
                 w.select()
             return w
 
+        elif spec.widget == "slider":
+            container = ctk.CTkFrame(self.paramsFrame, fg_color="transparent")
+            val_label = ctk.CTkLabel(container, text=str(int(float(initialValue))), font=("微软雅黑", 13, "bold"),
+                                     width=40)
+            val_label.pack(side="right", padx=(5, 0))
+            slider = ctk.CTkSlider(
+                container, from_=spec.from_, to=spec.to,
+                command=lambda val, l=val_label: l.configure(text=str(int(val)))
+            )
+            slider.set(float(initialValue))
+            slider.pack(side="left", fill="x", expand=True)
+            container._slider = slider  # 把slider引用挂到container上，onSave时通过它读取
+            return container
+
         # 默认单行输入框
         else:
             w = ctk.CTkEntry(self.paramsFrame, font=("微软雅黑", 13), placeholder_text=spec.placeholder)
@@ -241,7 +268,10 @@ class ShortcutEditWindow(ctk.CTkToplevel):
                 if isinstance(widget, ctk.CTkTextbox):
                     val = widget.get("1.0", "end-1c").strip()
                 elif isinstance(widget, ctk.CTkCheckBox):
-                    val = bool(widget.get())  # 转为 True/False
+                    val = bool(widget.get())
+                elif isinstance(widget, ctk.CTkFrame) and hasattr(widget, '_slider'):
+                    val = str(int(widget._slider.get()))
+                # 转为 True/False
                 else:  # CTkEntry 和 CTkOptionMenu
                     val = widget.get().strip()
 
@@ -262,5 +292,60 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         # 4. 标记已保存并关闭窗口
         self.saved = True
         self.destroy()
+
+    # ==================== 坐标获取功能 ====================
+
+    def start_coord_capture(self):
+        if not self.executor:
+            messagebox.showerror("错误", "未获取到执行器实例，无法暂停全局监听")
+            return
+        self.executor.stop()
+        self._coord_count = 0
+        self.capture_top = ctk.CTkToplevel(self)
+        self.capture_top.geometry("320x120")
+        self.capture_top.title("获取坐标模式")
+        self.capture_top.attributes("-topmost", True)
+        self.capture_top.protocol("WM_DELETE_WINDOW", lambda: None)
+        self.capture_label = ctk.CTkLabel(
+            self.capture_top,
+            text="移动鼠标到目标位置\n按空格或Enter记录到备注，按 Esc 结束",
+            font=("微软雅黑", 14)
+        )
+        self.capture_label.pack(pady=10)
+        self.capture_listener = pynput_keyboard.Listener(on_press=self._on_capture_key_press)
+        self.capture_listener.start()
+        self._poll_mouse_pos()
+
+    def _poll_mouse_pos(self):
+        if hasattr(self, 'capture_top') and self.capture_top.winfo_exists():
+            x, y = pynput_mouse.Controller().position
+            self.capture_label.configure(
+                text="移动鼠标到目标位置\n按 空格 或 Enter 记录到备注，按 Esc 结束\n当前坐标: ({}, {})".format(x, y)
+            )
+            self.after(50, self._poll_mouse_pos)
+
+    def _on_capture_key_press(self, key):
+        if key == pynput_keyboard.Key.enter or key == pynput_keyboard.Key.space:
+            x, y = pynput_mouse.Controller().position
+            self.after(0, lambda: self._insert_coord_to_desc(x, y))
+        elif key == pynput_keyboard.Key.esc:
+            self.after(0, self.stop_coord_capture)
+
+    def _insert_coord_to_desc(self, x, y):
+        self._coord_count += 1
+        current_text = self.descriptionEntry.get("1.0", "end-1c")
+        if current_text and not current_text.endswith("\n"):
+            self.descriptionEntry.insert("end-1c", "\n")
+        self.descriptionEntry.insert("end-1c", "坐标{}, x：{}, y：{}\n".format(self._coord_count, x, y))
+
+    def stop_coord_capture(self):
+        if hasattr(self, 'capture_listener') and self.capture_listener:
+            self.capture_listener.stop()
+            self.capture_listener = None
+        if hasattr(self, 'capture_top') and self.capture_top.winfo_exists():
+            self.capture_top.destroy()
+        if self.executor:
+            self.executor.start()
+
 
 

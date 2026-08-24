@@ -13,6 +13,9 @@ class ParamSpec:
     required: bool = False    # 是否必填
     options: list[str] = field(default_factory=list)  # 给 combobox 用的选项列表
     placeholder: str = ""  #  单行输入框的灰色提示文字
+    # 滑块控件的取值范围
+    from_: int = 0
+    to: int = 100
 
 
 @dataclass
@@ -152,6 +155,61 @@ ACTION_REGISTRY: list[ActionDef] = [
             )
         ]
     ),
+    ActionDef(
+        key="mouseMoveTo",
+        displayName="鼠标-移动到指定坐标\n（移动后的点击请用鼠标-模拟点击动作）",
+        params=[
+            ParamSpec(key="x", label="X 坐标", widget="entry", required=True,
+                      placeholder="左上角为原点,x向右y向下为正,支持负数"),
+            ParamSpec(key="y", label="Y 坐标", widget="entry", required=True,
+                      placeholder="左上角为原点,x向右y向下为正,支持负数"),
+            ParamSpec(key="duration", label="平滑耗时(秒,0为瞬移)", widget="entry", default="0",
+                      placeholder="如填0.3表示用0.3秒匀速移动过去")
+        ]
+    ),
+    ActionDef(
+        key="mouseMoveStep",
+        displayName="鼠标-步进移动(微调)",
+        params=[
+            ParamSpec(key="direction", label="方向", widget="combobox", options=["上", "下", "左", "右"], default="右"),
+            ParamSpec(key="distance", label="步进距离(像素)", widget="slider", default=50, from_=1, to=500)
+        ]
+    ),
+    ActionDef(
+        key="mouseClick",
+        displayName="鼠标-模拟点击",
+        params=[
+            ParamSpec(key="button", label="按键", widget="combobox",
+                      options=["左键", "右键", "中键", "侧键前进", "侧键后退"], default="左键"),
+            ParamSpec(key="count", label="次数", widget="combobox", options=["单击", "双击"], default="单击"),
+            ParamSpec(key="moveToFirst", label="点击前是否移动到坐标?", widget="checkbox", default=False),
+            ParamSpec(key="x", label="X 坐标", widget="entry", placeholder="左上角为原点,x向右y向下为正,支持负数"),
+            ParamSpec(key="y", label="Y 坐标", widget="entry", placeholder="左上角为原点,x向右y向下为正,支持负数")
+        ]
+    ),
+    ActionDef(
+        key="mouseScroll",
+        displayName="鼠标-滚轮滚动",
+        params=[
+            ParamSpec(key="direction", label="方向", widget="combobox", options=["向上", "向下"], default="向上"),
+            ParamSpec(key="amount", label="滚动量(格)", widget="entry", default="3", required=True)
+        ]
+    ),
+    ActionDef(
+        key="mouseDrag",
+        displayName="鼠标-拖拽\n(模拟起点左键按住，终点松开)",
+        params=[
+            ParamSpec(key="startX", label="起点 X", widget="entry", required=True,
+                      placeholder="左上角为原点,x向右y向下为正,支持负数"),
+            ParamSpec(key="startY", label="起点 Y", widget="entry", required=True,
+                      placeholder="左上角为原点,x向右y向下为正,支持负数"),
+            ParamSpec(key="endX", label="终点 X", widget="entry", required=True,
+                      placeholder="左上角为原点,x向右y向下为正,支持负数"),
+            ParamSpec(key="endY", label="终点 Y", widget="entry", required=True,
+                      placeholder="左上角为原点,x向右y向下为正,支持负数")
+        ]
+    ),
+
 ]
 
 # 方便快速查询的映射字典

@@ -178,6 +178,7 @@ class MainWindow(ctk.CTk):
             onRenamed=self.handleSchemeRenamed,
             onStartupChanged=self.handleSchemeStartupChanged,
             onExecutorRefresh=self.refreshExecutor,
+            executor=self.executor,
         )
         self.pages[schemeName] = newPage
 

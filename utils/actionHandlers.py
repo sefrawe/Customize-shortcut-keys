@@ -9,11 +9,13 @@ import threading
 import webbrowser
 
 import win32clipboard as wc
-from pynput import keyboard
+from pynput import keyboard,mouse
 
 from utils.actionRegistry import registerActionHandler, ACTION_REGISTRY
 from utils.interpreterRegistry import getInterpreterSpec
 from core.configManager import loadUserBlacklist
+
+
 
 
 # ==================== 工具函数 ====================
@@ -294,6 +296,174 @@ def doCustomCommand(params: dict, context: dict | None = None):
     except Exception as e:
         raise RuntimeError(f"执行命令失败:\n{str(e)}")
 
+# ==================== 鼠标动作处理器 ====================
+
+# 按钮映射字典
+_MOUSE_BUTTON_MAP = {
+    "左键": mouse.Button.left,
+    "右键": mouse.Button.right,
+    "中键": mouse.Button.middle,
+    "侧键前进": mouse.Button.x1,
+    "侧键后退": mouse.Button.x2,
+}
+
+def doMouseMoveTo(params: dict, context: dict | None = None):
+    """动作：鼠标移动到指定坐标"""
+    try:
+        x = int(float(params.get("x", "0")))
+        y = int(float(params.get("y", "0")))
+    except (ValueError, TypeError):
+        raise RuntimeError("X 或 Y 坐标不是有效的整数")
+
+    duration_str = str(params.get("duration", "0")).strip()
+    try:
+        duration = float(duration_str)
+    except ValueError:
+        duration = 0.0
+
+    m = mouse.Controller()
+
+    if duration <= 0:
+        # 瞬移
+        m.position = (x, y)
+    else:
+        # 平滑移动：线性插值，每 5ms 移动一步
+        start_x, start_y = m.position
+        steps = max(int(duration / 0.005), 1)
+        for i in range(1, steps + 1):
+            progress = i / steps
+            cur_x = int(start_x + (x - start_x) * progress)
+            cur_y = int(start_y + (y - start_y) * progress)
+            m.position = (cur_x, cur_y)
+            time.sleep(duration / steps)
+
+    time.sleep(0.05)
+
+def doMouseMoveStep(params: dict, context: dict | None = None):
+    """动作：鼠标步进移动（微调）"""
+    direction = params.get("direction", "右")
+    try:
+        distance = int(float(params.get("distance", 50)))
+    except (ValueError, TypeError):
+        distance = 50
+
+    m = mouse.Controller()
+    cur_x, cur_y = m.position
+
+    if direction == "上":
+        m.position = (cur_x, cur_y - distance)
+    elif direction == "下":
+        m.position = (cur_x, cur_y + distance)
+    elif direction == "左":
+        m.position = (cur_x - distance, cur_y)
+    elif direction == "右":
+        m.position = (cur_x + distance, cur_y)
+
+    time.sleep(0.05)
+
+def doMouseClick(params: dict, context: dict | None = None):
+    """动作：模拟鼠标点击"""
+    button_name = params.get("button", "左键")
+    count = params.get("count", "单击")
+    moveToFirst = params.get("moveToFirst", False)
+    if isinstance(moveToFirst, str):
+        moveToFirst = moveToFirst.lower() in ("true", "1", "yes")
+
+    m = mouse.Controller()
+    button = _MOUSE_BUTTON_MAP.get(button_name, mouse.Button.left)
+
+    # 如果需要先移动到指定坐标
+    if moveToFirst:
+        try:
+            x = int(float(params.get("x", "0")))
+            y = int(float(params.get("y", "0")))
+            m.position = (x, y)
+            time.sleep(0.05)
+        except (ValueError, TypeError):
+            raise RuntimeError("X 或 Y 坐标不是有效的整数")
+
+    # 执行点击
+    click_count = 2 if count == "双击" else 1
+    try:
+        m.click(button, click_count)
+    except Exception as e:
+        # 侧键可能不支持，回退到左键
+        if button_name in ("侧键前进", "侧键后退"):
+            try:
+                m.click(mouse.Button.left, click_count)
+            except Exception:
+                raise RuntimeError(f"鼠标点击失败，且侧键可能不支持:\n{str(e)}")
+        else:
+            raise RuntimeError(f"鼠标点击失败:\n{str(e)}")
+
+    time.sleep(0.05)
+
+def doMouseScroll(params: dict, context: dict | None = None):
+    """动作：鼠标滚轮滚动"""
+    direction = params.get("direction", "向上")
+    try:
+        amount = int(float(params.get("amount", "3")))
+    except (ValueError, TypeError):
+        raise RuntimeError("滚动量不是有效的整数")
+
+    m = mouse.Controller()
+    # pynput: dy > 0 向上滚, dy < 0 向下滚
+    dy = amount if direction == "向上" else -amount
+
+    try:
+        m.scroll(0, dy)
+    except Exception as e:
+        raise RuntimeError(f"滚轮滚动失败:\n{str(e)}")
+
+    time.sleep(0.05)
+
+def doMouseDrag(params: dict, context: dict | None = None):
+    """动作：鼠标拖拽"""
+    try:
+        startX = int(float(params.get("startX", "0")))
+        startY = int(float(params.get("startY", "0")))
+        endX = int(float(params.get("endX", "0")))
+        endY = int(float(params.get("endY", "0")))
+    except (ValueError, TypeError):
+        raise RuntimeError("起点或终点坐标不是有效的整数")
+
+    m = mouse.Controller()
+
+    try:
+        # 1. 移动到起点
+        m.position = (startX, startY)
+        time.sleep(0.1)
+
+        # 2. 按下左键
+        m.press(mouse.Button.left)
+        time.sleep(0.1)
+
+        # 3. 分步移动到终点（模拟真实拖拽手感，避免某些程序检测到瞬移）
+        steps = 20
+        for i in range(1, steps + 1):
+            progress = i / steps
+            cur_x = int(startX + (endX - startX) * progress)
+            cur_y = int(startY + (endY - startY) * progress)
+            m.position = (cur_x, cur_y)
+            time.sleep(0.01)
+
+        # 4. 确保到达终点
+        m.position = (endX, endY)
+        time.sleep(0.05)
+
+        # 5. 松开左键
+        m.release(mouse.Button.left)
+    except Exception as e:
+        # 异常时确保释放按键，防止鼠标卡死
+        try:
+            m.release(mouse.Button.left)
+        except Exception:
+            pass
+        raise RuntimeError(f"鼠标拖拽失败:\n{str(e)}")
+
+    time.sleep(0.05)
+
+
 
 # ==================== 注册 ====================
 
@@ -304,6 +474,11 @@ def initActionHandlers():
     registerActionHandler("mediaControl", doMediaControl)
     registerActionHandler("insertDateTime", doInsertDateTime)
     registerActionHandler("customCommand", doCustomCommand)
+    registerActionHandler("mouseMoveTo", doMouseMoveTo)
+    registerActionHandler("mouseMoveStep", doMouseMoveStep)
+    registerActionHandler("mouseClick", doMouseClick)
+    registerActionHandler("mouseScroll", doMouseScroll)
+    registerActionHandler("mouseDrag", doMouseDrag)
 
     for action_def in ACTION_REGISTRY:
         # 跳过 "（无动作）" 这个特殊动作
