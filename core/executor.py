@@ -25,8 +25,7 @@
 
 1. 标准化不再合并：
    - _normalizeAlias: 只做等价拼写转换（如 control -> ctrl），不再将 ctrl_l/ctrl_r 强行合并为 ctrl。
-   - _normalizeSingleKey: 利用虚拟键码(VK Code)区分主键盘数字(vk 48-57 返回 '1')
-     和小键盘数字(vk 96-105 返回 'numpad_1')。
+   _normalizeSingleKey: 先查 name 特殊键别名体系；常规字符键一律经 vkKeyMap.VK_TO_NAME 以虚拟键码判定（物理键位语义，免疫修饰键/大写锁定/输入法污染；Bug#30 重构核心）。
 
 2. 智能匹配机制：
    - _is_key_match / _isCombinationMatch: 如果配置写统称(如 'ctrl')，则允许监听到的具体特称(如 'ctrl_l' 或 'ctrl_r')匹配成功；
@@ -48,6 +47,9 @@ from core.listener import KeyboardListener
 from utils.actionHandlers import initActionHandlers
 from utils.actionRegistry import getActionDefByKey
 from utils.shortcutUtils import getShortcutBySchemeName, getStartupEnabledShortcutScheme
+
+from utils.vkKeyMap import VK_TO_NAME
+
 
 initActionHandlers()
 
@@ -242,31 +244,42 @@ class Executor:
         return normalized
 
     def _normalizeSingleKey(self, key):
-        """把单个按键对象统一成字符串。"""
+        """
+        将 pynput 按键事件对象归一化为规范键名字符串（Bug#30 重构核心）。
+
+        判定顺序【不可调换】，三级漏斗从可靠到不可靠：
+          ① 特殊键   有 name 属性 → 走别名归一化
+                     （ctrl_l / f5 / space 等由 _normalizeAlias 统一收口，
+                      此路原有逻辑不动）
+          ② 常规键★ vk 命中 vkKeyMap.VK_TO_NAME → 直接采用规范名
+                     vk 是物理键位编号，天生免疫修饰键/大小写锁定/输入法
+                     三种状态污染——这是本次重构的全部意义所在。
+          ③ char兜底 仅当 vk 未收录且无 name 的极罕见场景。
+                     ⚠ 此路径的产物可能被修饰键污染（如 Ctrl+C 给出 '\x03'），
+                     属于"知道不可靠但留着以防万一"的容错位。
+                     边界铁律：永远不许靠它实现新功能（见记事本·边界备忘3）。
+
+        参数: key —— pynput 监听回调交来的按键对象
+        返回: 规范键名 str；无法识别返回 None（调用方按既有逻辑忽略该键）
+        """
         if key is None:
             return None
 
-        # 特殊键（如 Key.ctrl_l、Key.ctrl_r）
-        if hasattr(key, "name"):
-            return self._normalizeAlias(key.name.lower())
+        # ── ① 特殊键：pynput 的 Key 枚举成员才有 name 属性 ─────────────
+        name = getattr(key, "name", None)
+        if name:
+            return self._normalizeAlias(str(name).lower())
 
-        # 普通字符键（如 KeyCode）
-        keyName = getattr(key, "char", None)
-        if keyName:
-            return keyName.lower()
-
-        # char 为 None 时，用 vk 虚拟键码还原
+        # ── ② vk 总表查询：本轮唯一的新增主路径 ★ ─────────────────────
         vk = getattr(key, "vk", None)
-        if vk is not None:
-            # 主键盘数字键 0-9（vk 48-57）
-            if 48 <= vk <= 57:
-                return chr(vk)
-            # 字母键 A-Z（vk 65-90）
-            if 65 <= vk <= 90:
-                return chr(vk).lower()
-            # ★ 小键盘数字键 0-9（vk 96-105）
-            if 96 <= vk <= 105:
-                return f"numpad_{chr(vk - 48)}"
+        if vk is not None and vk in VK_TO_NAME:
+            return VK_TO_NAME[vk]
+
+        # ── ③ char 最后容错（不可靠路径，勿依赖）─────────────────────
+        ch = getattr(key, "char", None)
+        if ch:
+            return str(ch).lower()
+
         return None
 
     def _normalizeAlias(self, keyName):
@@ -302,7 +315,15 @@ class Executor:
         return False
 
     def _parseKeyCombination(self, keyCombination):
-        """把配置里的组合键字符串拆成集合。"""
+        """把配置里的组合键字符串拆成集合。
+
+        【直通原则】本函数没有任何别名兑换（旧的 plus 还原已随决策5删除）：
+        - 合法性由 keyValidator 在保存环节把关，此处无条件信任输入；
+        - 统称/特称收敛统一走 _normalizeAlias（control->ctrl 等等价拼写除外）；
+        - 若出现监听端不可能产出的键名（如手改JSON写了 prtscn），
+          后果只是该快捷键永不触发，不影响其他条目——坏数据的最坏结局
+          就是"失效"，而不是"误触发"，这是可接受的设计底线。
+        """
         if not keyCombination:
             return set()
         tokens = re.split(r"\s*\+\s*", keyCombination.strip())
@@ -311,11 +332,7 @@ class Executor:
             token = token.strip().lower()
             if not token:
                 continue
-            # 如果是 plus，直接还原为 '+' 字符
-            if token == "plus":
-                normalized.add("+")
-            else:
-                normalized.add(self._normalizeAlias(token))
+            normalized.add(self._normalizeAlias(token))
         return normalized
 
     def _findMatchedShortcut(self, pressedKeyNames):

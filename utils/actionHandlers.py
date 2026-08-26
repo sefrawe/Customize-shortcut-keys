@@ -17,6 +17,7 @@ from core.configManager import loadUserBlacklist
 
 from utils.keyValidator import validate_key_combination
 
+from utils.vkKeyMap import NAME_TO_VK
 
 
 # ==================== 工具函数 ====================
@@ -336,13 +337,9 @@ _SIMULATE_MODIFIER_TOKENS = {
     "cmd", "cmd_l", "cmd_r",
 }
 
-# 小键盘运算键映射：pynput 在 Windows 后端没有这些 Key 属性
-# （监听端收到的是带 vk 的 KeyCode），因此发送端也只能按虚拟键码直发。
-# 数值来源：Windows 虚拟键码常量 (VK_ADD=107 等)；enter 无独立小键盘 vk，用主回车 13 近似。
-_SIMULATE_NUMPAD_VK = {
-    "numpad_add": 107, "numpad_subtract": 109, "numpad_multiply": 106,
-    "numpad_divide": 111, "numpad_decimal": 110, "numpad_enter": 13,
-}
+# 小键盘运算键与所有常规字符键的 vk 映射已并入 utils/vkKeyMap.NAME_TO_VK，
+# 监听端与发送端共用同一张总表，杜绝两端各养一份映射漂移的可能。
+
 
 # 特殊键白名单：与 keyValidator.LEGAL_KEYS 的"特殊键"区段一一对应，
 # 这些名字恰好都是 pynput.Key 的真实属性名，可直接 getattr 取用。
@@ -351,6 +348,8 @@ _SIMULATE_SPECIAL_KEYS = {
     "space", "tab", "enter", "esc", "up", "down", "left", "right",
     "backspace", "delete", "home", "end", "page_up", "page_down",
     "caps_lock", "insert",
+    "print_screen",  # 与 LEGAL_KEYS 同步收录；pynput.Key.print_screen 属性直取即可
+
 }
 
 
@@ -358,57 +357,57 @@ def _parseSimulateTokens(key_str: str) -> list[str]:
     """把按键组合字符串拆成 token 列表。
 
     拆分规则与 keyValidator.validate_key_combination 保持同源：
-    转 小写 -> 按 '+' 分割 -> 去空格和空片段 -> 把单词 'plus' 还原为真实 '+' 字符。
-    注意：不能直接使用校验器返回的 cleaned 字符串再拆，
-    因为 'plus' 在 cleaned 里已被还原成 '+'，二次 split 会把它吃掉。
+    转 小写 -> 按 '+' 分割 -> 去空格和空片段。
+
+    【直通原则】不做任何别名兑换（plus 分支已随决策5删除）：走到这里的
+    输入必然刚通过校验器放行，而校验器根本不接受 plus/'+' 这类写法。
     """
-    tokens = [p.strip().lower() for p in key_str.split('+') if p.strip()]
-    return ["+" if t == "plus" else t for t in tokens]
+    return [p.strip().lower() for p in key_str.split('+') if p.strip()]
 
 
 def _tokenToPynputObject(token: str):
     """单个 token -> pynput 可按压对象（Key 枚举或 KeyCode）。查不到就抛错。
 
-    映射原则：镜像监听端 executor._normalizeSingleKey 的反推——
-    监听端用哪些 vk 区间识别按键，发送端就用同一批 vk 发出去，
-    保证"它能听到的，就一定能发出去"（vk 区间三段对称：字母/主数字/小键盘数字）。
+    映射原则【vk-first 双端对称】：
+      · 常规字符键（字母/主键盘数字/小键盘数字与运算键/OEM标点11键）
+        一律先查 vkKeyMap.NAME_TO_VK，再 KeyCode.from_vk 直发——
+        与监听端 executor._normalizeSingleKey 共用同一张总表，
+        保证"它能听到的，就一定能发出去"；同样免疫布局与大写锁定差异。
+      · 特殊键与修饰键不属于字符键域，保持 pynput.Key 属性直取：
+          - 修饰键 ctrl_l / alt_r ...（组合前缀，按住不放）
+          - 功能键 f1~f12、space/tab/enter、方向键、编辑键区等
     """
-    # 1) 小键盘运算键：走专属 vk 字典（pynput 无对应属性，见常量表注释）
-    if token in _SIMULATE_NUMPAD_VK:
-        return keyboard.KeyCode.from_vk(_SIMULATE_NUMPAD_VK[token])
+    # 0) 等价拼写收敛（control/windows/command/option → 正名），
+    #    口径与 executor._normalizeAlias 一致；_SIMULATE_ALIAS_MAP 因此生效
+    token = _SIMULATE_ALIAS_MAP.get(token, token)
 
-    # 2) 修饰键与小键盘数字：都是 pynput.Key 的真实属性名，直取
-    #    （ctrl_l / numpad_5 / f1 ... ；f 键同样命中此分支）
+    # 1) ★ 常规字符键主路径：总表命中即直发虚拟键码。
+    #    覆盖范围与监听端识别范围严格相等（62 键，见 vkKeyMap 自测数）。
+    vk = NAME_TO_VK.get(token)
+    if vk is not None:
+        return keyboard.KeyCode.from_vk(vk)
+
+    # 2) 修饰键：pynput.Key 真实属性名，作为前缀按压
     if token in _SIMULATE_MODIFIER_TOKENS:
         return getattr(keyboard.Key, token)
-    if token.startswith("numpad_"):
-        return getattr(keyboard.Key, token)
-    # 功能键 F1~F12：属性名就是 f1~f12
+
+    # 3) 功能键 F1~F12：先验证 f 后必为数字且落在 1~12，
+    #    防止把别的 f 开头单词误当功能键吞掉
     if len(token) >= 2 and token[0] == "f" and token[1:].isdigit():
         num = int(token[1:])
         if 1 <= num <= 12:
             return getattr(keyboard.Key, token)
 
-    # 3) 单个字母 a-z：用 vk 直发而非 from_char，保证跨键盘布局稳定，
-    #    且 vk=65+i 与监听端字母区间严格对称
-    if len(token) == 1 and "a" <= token <= "z":
-        return keyboard.KeyCode.from_vk(ord(token.upper()))
-
-    # 4) 主键盘数字 0-9：vk 48~57，与监听端数字区间一致
-    if token.isdigit() and len(token) == 1:
-        return keyboard.KeyCode.from_vk(48 + int(token))
-
-    # 5) 加号键：这是唯一以"字符"身份存在的合法键（用户须写 plus 触发）
-    if token == "+":
-        return keyboard.KeyCode.from_char("+")
-
-    # 6) 其余特殊键：空格/方向键/F区外剩余项等，直取枚举
+    # 4) 其余特殊键白名单（与 keyValidator 特殊键区段一一对应）
     if token in _SIMULATE_SPECIAL_KEYS:
         return getattr(keyboard.Key, token)
 
-    # 兜底防线：理论上经过 validate_key_combination 放行的 token 都能走到上面，
-    # 能落到这里说明校验器与映射表出现了不同步，明确报错方便排查。
-    raise RuntimeError(f"未知的按键 token: '{token}'\n（校验器与发送映射表不同步，请反馈此问题）")
+    # 兜底防线：理论上经校验器放行的 token 都能命中以上分支；
+    # 落到这里说明"校验器 ↔ vkKeyMap ↔ 白名单"三方出现了不同步。
+    raise RuntimeError(
+        f"未知的按键 token: '{token}'\n"
+        f"（校验器与发送映射表不同步，请反馈此问题）"
+    )
 
 
 def doSimulateKeys(params: dict, context: dict | None = None):
@@ -434,19 +433,22 @@ def doSimulateKeys(params: dict, context: dict | None = None):
             f"输入内容: {keys}\n"
             f"请在动作组编辑窗点「▶ 试运行」排查；可用键名参考快捷键录入规则。"
         )
-    # 注意：不使用 cleaned 做 token 化（'plus' 已被还原为 '+' 会丢字），
-    # 校验仅作为门卫，token 解析以原始输入为准（语义相同）。
-
     # ── 第三步：token 解析与分类 ──
-    tokens = _parseSimulateTokens(tokens_src := keys)  # noqa: F841 （保留命名便于断点调试）
+    # token 化直接基于原始输入；cleaned 仅作门卫产物（现两者语义一致）
+    tokens = _parseSimulateTokens(keys)
     modifier_objs: list = []   # 先按下的前缀（按住型）
     normal_objs: list = []     # 组合末位的实体键
-    for t in tokens:
-        obj = _tokenToPynputObject(t)
+    for raw in tokens:
+        # ★ 先收敛等价拼写再做修饰键归类（A4 修复）：
+        #   _SIMULATE_MODIFIER_TOKENS 只收正名，"control/windows" 等必须先转成
+        #   正名才能命中集合，否则被误判为实体键导致按压顺序错乱
+        t = _SIMULATE_ALIAS_MAP.get(raw, raw)
+        obj = _tokenToPynputObject(t)  # 函数内部第0步再收敛一次，幂等无害
         if t in _SIMULATE_MODIFIER_TOKENS:
             modifier_objs.append(obj)
         else:
             normal_objs.append(obj)
+
     # 同名重复 token（如手滑写了 ctrl+ctrl）不特判：多按一次多放一次，无害且省分支。
 
     # ── 第四步：释放物理残留修饰键，防组合被污染（与粘贴文本共用逻辑）──
