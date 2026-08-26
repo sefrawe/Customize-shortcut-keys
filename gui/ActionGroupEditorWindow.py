@@ -7,17 +7,28 @@ import customtkinter as ctk
 from utils.actionGroupExecutor import ActionGroupPlayer
 from utils.actionRegistry import ACTION_REGISTRY, getActionDefByKey, getActionDefByDisplayName
 
+from core.configManager import loadWindowSettings, center_window
 
 class ActionGroupEditorWindow(ctk.CTkToplevel):
     def __init__(self, parent, steps_data_full):
-        """
-        parent: 主编辑窗对象
-        steps_data_full: 包含全局参数和步骤列表的完整字典 {_actionGroupData}
-        """
+        """ ... """
         super().__init__(parent)
         self.title("编辑动作组步骤")
-        self.geometry("800x700")
-        self.minsize(700, 600)
+
+        # ==================== 修改：读取全局配置设置窗口大小 ====================
+        self.minsize(700, 600)  # 固定最小尺寸，防止UI崩溃
+        win_settings = loadWindowSettings().get("actionGroupWindow", {})
+        is_maximized = win_settings.get("maximized", False)
+        win_width = win_settings.get("width", 800)
+        win_height = win_settings.get("height", 700)
+
+        if is_maximized:
+            self.state("zoomed")
+        else:
+            # 按配置居中显示
+            center_window(self, win_width, win_height)
+        # ==============================================================
+
         self.grab_set()  # 模态阻塞
 
         self.parent = parent

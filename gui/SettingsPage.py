@@ -89,7 +89,8 @@ class SettingsPage(ctk.CTkFrame):
         win_configs = [
             {"key": "mainWindow", "title": "主窗口", "min_w": 1000, "min_h": 800},
             {"key": "editWindow", "title": "编辑窗口", "min_w": 600, "min_h": 400},
-            {"key": "searchWindow", "title": "搜索窗口", "min_w": 400, "min_h": 400}
+            {"key": "searchWindow", "title": "搜索窗口", "min_w": 400, "min_h": 400},
+            {"key": "actionGroupWindow", "title": "动作组编辑窗口", "min_w": 700, "min_h": 600},
         ]
 
         for cfg in win_configs:
