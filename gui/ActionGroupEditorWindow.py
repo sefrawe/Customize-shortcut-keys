@@ -2,6 +2,8 @@
 import threading
 from tkinter import messagebox
 
+import copy
+
 import customtkinter as ctk
 
 from utils.actionGroupExecutor import ActionGroupPlayer
@@ -34,9 +36,13 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self.parent = parent
         self.result = None
 
-        # 直接引用主窗口传来的完整数据，不再深拷贝
-        # 因为主界面已经去除了全局参数UI，子弹窗成了修改这些数据的唯一入口
-        self._actionGroupData = steps_data_full
+        # 1. _originalDataRef：父窗口真数据的引用，仅 onSave 时原地写回
+        # 2. _initialData：窗口刚打开时的快照，供"重置"按钮恢复用
+        # 3. _actionGroupData：工作副本，本窗口所有编辑只改这份
+        # 好处：点"取消"直接 destroy 即可，数据从未碰过原件，天然回滚
+        self._originalDataRef = steps_data_full
+        self._initialData = copy.deepcopy(steps_data_full)
+        self._actionGroupData = copy.deepcopy(steps_data_full)
         self.steps_data = self._actionGroupData.get("steps", [])
 
         self.grid_columnconfigure(0, weight=1)
@@ -107,6 +113,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         ctk.CTkButton(bottomFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="right", padx=5)
         ctk.CTkButton(bottomFrame, text="保存步骤", command=self.onSave).pack(side="right", padx=5)
         ctk.CTkButton(bottomFrame, text="▶ 试运行", fg_color="#2B5797", hover_color="#1B3F6B", command=self.onTrialRun).pack(side="left", padx=5)
+        ctk.CTkButton(bottomFrame, text="↺ 重置", fg_color="#555555", hover_color="#404040",command=self._onReset).pack(side="left", padx=5)
 
         logLabel = ctk.CTkLabel(self, text="试运行日志:", font=("微软雅黑", 13, "bold"))
         logLabel.grid(row=3, column=0, sticky="sw", padx=15, pady=(10, 0))
@@ -136,6 +143,29 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         """只返回真正的步骤行控件，排除 stats_frame 和 empty_frame"""
         return [w for w in self.scrollFrame.winfo_children() if hasattr(w, "_is_step") and w._is_step]
     # ======================================================================
+
+    def _getMissingRequiredParams(self, step_data):
+        """
+        检查某步骤的必填参数是否齐全
+        返回缺失项的中文名列表（空列表 = 配置齐全，允许启用）
+        """
+        action_def = getActionDefByKey(step_data.get("action", ""))
+
+        # 情况1：还没选动作类型（新步骤占位状态），直接视为未配置
+        if not action_def or not action_def.key:
+            return ["动作类型（尚未选择）"]
+
+        # 情况2：遍历注册表中标记为 required 的参数
+        missing = []
+        params = step_data.get("actionParams", {})
+        for spec in action_def.params:
+            # 与 StepParamEditorWindow 的校验口径保持一致：checkbox 类型不参与空值判断
+            if spec.required and spec.widget != "checkbox":
+                val = str(params.get(spec.key, "")).strip()
+                if not val:
+                    missing.append(spec.label.replace('\n', ' '))
+        return missing
+
 
     def _getAvailableActions(self):
         """获取允许在动作组中使用的动作"""
@@ -207,19 +237,23 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         rowFrame.grid_columnconfigure(2, weight=1)  # 让备注列可伸缩
 
         # ==================== 修复Bug3：标记为步骤行 ====================
-        # 这是真正的步骤行，_getStepRows() 会通过此标记识别它
         rowFrame._is_step = True
         # =========================================================
 
-        # 状态判断：是否启用
+        # ==================== 修复死锁：编辑控件不再随"启用状态"锁定 ====================
+        # 原逻辑：未启用的步骤，下拉框/备注/延迟/参数按钮全部被置为 disabled，
+        # 而新步骤现在默认 enabled=False，导致死循环：
+        #   想启用 → 提示先配置参数 → 参数按钮是灰的点不了 → 永远无法启用
+        # 修复：编辑控件永远保持 normal，"启用"复选框只控制该步骤是否参与执行
         is_enabled = step_data.get("enabled", True)
-        widget_state = "normal" if is_enabled else "disabled"
+        # ========================================================================
 
         # 1. 序号
-        ctk.CTkLabel(rowFrame, text=str(index+1), width=30, font=("微软雅黑", 14, "bold")).grid(row=0, column=0, padx=5)
+        ctk.CTkLabel(rowFrame, text=str(index + 1), width=30, font=("微软雅黑", 14, "bold")).grid(row=0, column=0,
+                                                                                                  padx=5)
 
-        # 2. 动作类型下拉框
-        action_menu = ctk.CTkOptionMenu(rowFrame, values=self._getAvailableActions(), font=("微软雅黑", 13), width=150, state=widget_state)
+        # 2. 动作类型下拉框（不再传 state，永远可编辑）
+        action_menu = ctk.CTkOptionMenu(rowFrame, values=self._getAvailableActions(), font=("微软雅黑", 13), width=150)
         current_action_key = step_data.get("action", "")
         current_action_def = getActionDefByKey(current_action_key)
         if current_action_def:
@@ -230,43 +264,47 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         action_menu.configure(command=lambda val, rf=rowFrame: self._onStepActionChanged(rf, val))
         action_menu.grid(row=0, column=1, padx=5, pady=5)
 
-        # 3. 备注输入框 (升级为多行 Textbox 并实现自适应撑高)
+        # 3. 备注输入框（永远可编辑）
         note_text = step_data.get("note", "")
         note_entry = ctk.CTkTextbox(rowFrame, font=("微软雅黑", 13), height=28, border_width=1, corner_radius=4)
         note_entry.insert("1.0", note_text)
         note_entry.grid(row=0, column=2, sticky="ew", padx=5, pady=5)
-        # 绑定自适应高度事件
         note_entry.bind("<KeyRelease>", lambda e, tb=note_entry: self._adjust_note_height(tb))
-        note_entry.configure(state=widget_state)
-        # 初次渲染也调整一下高度
         self._adjust_note_height(note_entry, init=True)
 
-        # 4. 启用状态复选框 (绑定状态切换事件)
-        enabled_check = ctk.CTkCheckBox(rowFrame, text="启用", font=("微软雅黑", 13), command=lambda rf=rowFrame: self._toggle_step_enabled(rf))
+        # 4. 启用状态复选框（保持不变）
+        enabled_check = ctk.CTkCheckBox(rowFrame, text="启用", font=("微软雅黑", 13),
+                                        command=lambda rf=rowFrame: self._toggle_step_enabled(rf))
         if is_enabled:
             enabled_check.select()
         enabled_check.grid(row=0, column=3, padx=5)
 
-        # 5. 延迟配置按钮 (中文化映射)
+        # 5. 延迟配置按钮（永远可点击）
         delay_cfg = step_data.get("delayAfter", {"type": "none", "value": 0})
         delay_type_map = {"none": "无延迟", "fixed": "固定时间", "wait_release": "等待释放"}
         delay_text = delay_type_map.get(delay_cfg.get("type", "none"), "无延迟")
-        delay_btn = ctk.CTkButton(rowFrame, text=f"⏱ {delay_text}", width=100, font=("微软雅黑", 13), state=widget_state, command=lambda rf=rowFrame: self._openDelayEditor(rf))
+        delay_btn = ctk.CTkButton(rowFrame, text=f"⏱ {delay_text}", width=100, font=("微软雅黑", 13),
+                                  command=lambda rf=rowFrame: self._openDelayEditor(rf))
         delay_btn.grid(row=0, column=4, padx=5)
 
-        # 6. 参数配置按钮 (状态化：已配置/未配置)
+        # 6. 参数配置按钮（永远可点击）
         is_param_configured = bool(step_data.get("actionParams"))
         param_text = "⚙ 参数 (已配置)" if is_param_configured else "⚙ 参数 (未配置)"
-        param_color = "#4ECDC4" if is_param_configured else "gray"  # 已配置高亮青色，未配置灰色
-        param_btn = ctk.CTkButton(rowFrame, text=param_text, width=130, font=("微软雅黑", 13), fg_color=param_color, hover_color="#3CB8B0", state=widget_state, command=lambda rf=rowFrame: self._openStepParamEditor(rf))
+        param_color = "#4ECDC4" if is_param_configured else "gray"
+        param_btn = ctk.CTkButton(rowFrame, text=param_text, width=130, font=("微软雅黑", 13),
+                                  fg_color=param_color, hover_color="#3CB8B0",
+                                  command=lambda rf=rowFrame: self._openStepParamEditor(rf))
         param_btn.grid(row=0, column=5, padx=5)
 
-        # 7. 排序与删除按钮组
+        # 7. 排序与删除按钮组（永远可点击）
         btn_frame = ctk.CTkFrame(rowFrame, fg_color="transparent")
         btn_frame.grid(row=0, column=6, padx=5)
-        ctk.CTkButton(btn_frame, text="↑", width=30, state=widget_state, command=lambda rf=rowFrame: self._moveStep(rf, -1)).pack(side="left", padx=1)
-        ctk.CTkButton(btn_frame, text="↓", width=30, state=widget_state, command=lambda rf=rowFrame: self._moveStep(rf, 1)).pack(side="left", padx=1)
-        ctk.CTkButton(btn_frame, text="删", width=30, fg_color="#A30000", hover_color="#7A0000", command=lambda rf=rowFrame: self._deleteStep(rf)).pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="↑", width=30, command=lambda rf=rowFrame: self._moveStep(rf, -1)).pack(
+            side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="↓", width=30, command=lambda rf=rowFrame: self._moveStep(rf, 1)).pack(
+            side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="删", width=30, fg_color="#A30000", hover_color="#7A0000",
+                      command=lambda rf=rowFrame: self._deleteStep(rf)).pack(side="left", padx=1)
 
         # 存储控件引用
         rowFrame._action_menu = action_menu
@@ -291,41 +329,57 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             textbox.configure(height=new_height)
 
     def _toggle_step_enabled(self, rowFrame):
-        """切换步骤启用状态，并触发视觉降级"""
-        # ==================== 修复Bug3：使用 _getStepRows 替代 isinstance 过滤 ====================
+        """切换步骤启用状态 (只改数据 + 刷新统计栏，不再锁定编辑控件)"""
         row_frames = self._getStepRows()
-        # ==========================================================================
         index = row_frames.index(rowFrame)
         is_enabled = bool(rowFrame._enabled_check.get())
+
+        # 启用前必填参数校验（保持不变）
+        if is_enabled:
+            missing = self._getMissingRequiredParams(self.steps_data[index])
+            if missing:
+                messagebox.showwarning(
+                    "无法启用",
+                    "该步骤存在未配置的必填项，无法启用：\n\n"
+                    + "\n".join(f"• {m}" for m in missing)
+                    + "\n\n请先点击「⚙ 参数」补全配置，再回来勾选启用。",
+                    parent=self
+                )
+                rowFrame._enabled_check.deselect()
+                return
+
         self.steps_data[index]["enabled"] = is_enabled
 
-        # 状态切换
-        state = "normal" if is_enabled else "disabled"
-        # 由于 OptionMenu/Textbox 的 disabled 状态可能不接收鼠标，这里只做视觉置灰处理
-        # 对于按钮，可以直接改 state
-        rowFrame._action_menu.configure(state=state)
-        rowFrame._note_entry.configure(state=state)
-        rowFrame._delay_btn.configure(state=state)
-        rowFrame._param_btn.configure(state=state)
-        # 排序和删除按钮也需要处理
-        for btn in rowFrame.winfo_children()[-1].winfo_children():
-            btn.configure(state=state)
-
-        # 重新渲染以更新视觉效果
+        # ==================== 修改：移除原来的控件置灰逻辑 ====================
+        # 顺便修复一个隐藏小问题：重新渲染前把备注框内容同步回数据，
+        # 否则 _renderSteps() 重建行时，未保存的备注会被旧数据覆盖丢失
+        # ===================================================================
+        self.steps_data[index]["note"] = rowFrame._note_entry.get("1.0", "end-1c").strip()
         self._renderSteps()
 
     def _onStepActionChanged(self, rowFrame, value):
         """切换动作类型时，清空旧参数并刷新按钮状态 (移除弹窗)"""
-        # ==================== 修复Bug3：使用 _getStepRows 替代 isinstance 过滤 ====================
         row_frames = self._getStepRows()
-        # ==========================================================================
         index = row_frames.index(rowFrame)
         action_def = getActionDefByDisplayName(value)
         if action_def:
             self.steps_data[index]["action"] = action_def.key
             self.steps_data[index]["actionParams"] = {}  # 动作变了，参数必须清空
+
+            # 参数刚被清空，若该步骤此前处于启用状态，
+            # 会绕过"启用前校验"直接以空参数执行，所以这里强制禁用
+            was_enabled = self.steps_data[index].get("enabled", False)
+            self.steps_data[index]["enabled"] = False
+
             # v7：直接刷新按钮状态为"未配置"，不弹窗打断
             rowFrame._param_btn.configure(text="⚙ 参数 (未配置)", fg_color="gray")
+
+            # 强制禁用后需要重新渲染，让该行其他按钮同步进入置灰状态
+            # 强制禁用后需要重新渲染，让该行其他按钮同步进入置灰状态
+            if was_enabled:
+                # 把备注同步回数据，防止重新渲染时丢失未保存的输入
+                self.steps_data[index]["note"] = rowFrame._note_entry.get("1.0", "end-1c").strip()
+                self._renderSteps()
 
     def _moveStep(self, rowFrame, direction):
         """上移(-1)或下移(1)"""
@@ -355,7 +409,9 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         if len(self.steps_data) >= 50:
             messagebox.showwarning("上限提示", "已达到单次 50 步上限，无法继续添加！", parent=self)
             return
-        self.steps_data.append({"action": "", "actionParams": {}, "note": "", "enabled": True})
+        # 用户配置完参数后再手动启用，防止空参数步骤被误勾选执行
+        self.steps_data.append({"action": "", "actionParams": {}, "note": "", "enabled": False})
+        # self.steps_data.append({"action": "", "actionParams": {}, "note": "", "enabled": True})
         self._renderSteps()
         # 滚动到底部
         self.scrollFrame._parent_canvas.yview_moveto(1.0)
@@ -416,14 +472,50 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             )
             return  # 拦截保存操作
 
-        # 打包返回给主编辑窗
+
+        # 打包返回给主编辑窗（先把顶部控件值收集进工作副本）
         self._actionGroupData["steps"] = self.steps_data
         self._actionGroupData["stopOnError"] = self.stopOnErrorOpt.get()
         self._actionGroupData["loopCount"] = self.loopCountEntry.get().strip() or "1"
         self._actionGroupData["maxExecutionTime"] = max_exec_str
         self._actionGroupData["confirmAllAtOnce"] = bool(self.confirmAllBox.get())
-        self.result = self._actionGroupData
+        # 保持对象引用不变，父窗口其他地方持有的引用无感知地拿到最新数据
+        self._originalDataRef.clear()
+        self._originalDataRef.update(self._actionGroupData)
+        self.result = self._originalDataRef
         self.destroy()
+
+    def _onReset(self):
+        """重置：丢弃本次打开窗口以来的所有未保存修改，恢复到打开时的状态"""
+        # if not messagebox.askyesno(
+        #         "确认重置",
+        #         "将丢弃本次打开窗口以来所有的未保存修改\n（包括步骤增删、参数、延迟、全局配置），\n恢复到刚打开时的状态。\n\n确定要重置吗？",
+        #         parent=self
+        # ):
+        #     return
+
+        # 1. 从快照恢复工作数据（注意重新取 steps 引用，避免指向旧列表）
+        self._actionGroupData = copy.deepcopy(self._initialData)
+        self.steps_data = self._actionGroupData.get("steps", [])
+
+        # 2. 同步恢复顶部全局配置控件的显示
+        self.stopOnErrorOpt.set(self._actionGroupData.get("stopOnError", "停止整个动作组"))
+        self.loopCountEntry.delete(0, "end")
+        self.loopCountEntry.insert(0, str(self._actionGroupData.get("loopCount", "1")))
+        self.maxExecEntry.delete(0, "end")
+        self.maxExecEntry.insert(0, str(self._actionGroupData.get("maxExecutionTime", "60")))
+        if self._actionGroupData.get("confirmAllAtOnce", False):
+            self.confirmAllBox.select()
+        else:
+            self.confirmAllBox.deselect()
+
+        # 3. 重新渲染步骤列表（内部会自动重算预估时间、恢复添加按钮状态）
+        self._renderSteps()
+        self.logTextbox.configure(state="normal")
+        self.logTextbox.delete("1.0", "end")
+        self.logTextbox.configure(state="disabled")
+
+
 
     def onTrialRun(self):
         """试运行 (逻辑不变，日志框已改跟随主题)"""

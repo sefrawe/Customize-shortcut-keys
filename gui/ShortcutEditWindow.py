@@ -340,7 +340,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         # 上方：只读概览文本框
         self.stepSummaryTextbox = ctk.CTkTextbox(
             contentFrame,
-            height=300,
+            height=500,
             font=("微软雅黑", 13),
             corner_radius=5,
             state="disabled",
@@ -367,7 +367,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self._updateStepSummary()
 
     def _updateStepSummary(self):
-        """v7：更新步骤概览文本框，全量展示全局参数、步数预估和步骤详情（含延迟）"""
+        """v8：更新步骤概览文本框（层级缩进 + 每步分隔线）"""
         if not hasattr(self, "stepSummaryTextbox") or not self.stepSummaryTextbox.winfo_exists():
             return
 
@@ -379,65 +379,73 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.stepSummaryTextbox.tag_config("val_tag", foreground="#DCDCAA")  # 值：淡黄色
         self.stepSummaryTextbox.tag_config("warn_tag", foreground="#FFA500")  # 警告：橙色
         self.stepSummaryTextbox.tag_config("title_tag", foreground="#4ECDC4")  # 标题：青色
+        # ==================== 新增：分隔线专用颜色 Tag（灰色，弱化视觉）====================
+        self.stepSummaryTextbox.tag_config("sep_tag", foreground="#606060")
+        # ============================================================================
 
-        # --- 2. 展示全局选项 ---
+        # ==================== 新增：定义缩进常量 ====================
+        # L1（一级缩进）：用于全局配置/预估区的键值对，以及步骤序号行
+        INDENT_L1 = "    "
+        # L2（二级缩进）：用于步骤详情下的备注、按键、次数、延迟、参数等（与步骤名对齐）
+        INDENT_L2 = "         "
+        # 分隔线（用户指定样式）
+        SEPARATOR = "-------------------------------------"
+        # =========================================================
+
+        # --- 2. 展示全局选项（一级缩进）---
         self.stepSummaryTextbox.insert("end", "【全局配置】\n", "title_tag")
         loop_count = self._actionGroupData.get("loopCount", "1")
         max_exec = self._actionGroupData.get("maxExecutionTime", "60")
 
-        self.stepSummaryTextbox.insert("end", "单步失败策略: ", "key_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}单步失败策略: ", "key_tag")
         self.stepSummaryTextbox.insert("end", f"{self._actionGroupData.get('stopOnError', '停止整个动作组')}\n",
                                        "val_tag")
-        self.stepSummaryTextbox.insert("end", "循环执行次数: ", "key_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}循环执行次数: ", "key_tag")
         self.stepSummaryTextbox.insert("end", f"{loop_count} 次\n", "val_tag")
-        self.stepSummaryTextbox.insert("end", "总超时限制: ", "key_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}总超时限制: ", "key_tag")
         self.stepSummaryTextbox.insert("end", f"{max_exec} 秒\n", "val_tag")
-        self.stepSummaryTextbox.insert("end", "执行前统一确认: ", "key_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}执行前统一确认: ", "key_tag")
         is_confirm = self._actionGroupData.get("confirmAllAtOnce", False)
         self.stepSummaryTextbox.insert("end", f"{'是' if is_confirm else '否'}\n\n", "val_tag")
 
-        # --- 3. 展示步数规模透明化 ---
+        # --- 3. 展示步数规模透明化（一级缩进）---
         all_steps = self._actionGroupData.get("steps", [])
         enabled_steps = [s for s in all_steps if s.get("enabled", True)]
         single_count = len(enabled_steps)
         total_estimated = single_count * int(loop_count if str(loop_count).isdigit() else 1)
 
         self.stepSummaryTextbox.insert("end", "【步数预估】\n", "title_tag")
-        self.stepSummaryTextbox.insert("end", "单次执行步数: ", "key_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}单次执行步数: ", "key_tag")
         self.stepSummaryTextbox.insert("end", f"{single_count} 步\n", "val_tag")
-        self.stepSummaryTextbox.insert("end", "预估总执行步数: ", "key_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}预估总执行步数: ", "key_tag")
         self.stepSummaryTextbox.insert("end", f"{total_estimated} 步\n", "val_tag")
 
-        # --- 计算预估最少执行时间（总延迟时间）---
-        # ==================== 修改：统一按毫秒计算 ====================
+        # --- 计算预估最少执行时间（总延迟时间，统一毫秒）---
         total_delay_ms = 0
         for step in enabled_steps:
             delay_cfg = step.get("delayAfter", {})
             delay_type = delay_cfg.get("type", "none")
             delay_val = delay_cfg.get("value", 0)
-            # 以前: if delay_type == "fixed": total_delay_ms += delay_val elif delay_type == "wait_release": total_delay_ms += delay_val * 1000
-            # 现在: 无论哪种类型，value 存的都是毫秒，直接相加
+            # 无论 fixed 还是 wait_release，底层存储的都已经是毫秒，直接相加
             if delay_type in ("fixed", "wait_release"):
                 total_delay_ms += delay_val
-        # =============================================================
 
         estimated_min_sec = (total_delay_ms / 1000) * int(loop_count if str(loop_count).isdigit() else 1)
-        self.stepSummaryTextbox.insert("end", "预估最少执行时间: ", "key_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}预估最少执行时间: ", "key_tag")
         self.stepSummaryTextbox.insert("end", f"{estimated_min_sec:.1f} 秒 (仅含延迟)\n", "val_tag")
-        self.stepSummaryTextbox.insert("end", "(注：单次执行步骤上限为 50 步)\n\n", "warn_tag")
+        self.stepSummaryTextbox.insert("end", f"{INDENT_L1}(注：单次执行步骤上限为 50 步)\n\n", "warn_tag")
 
-        # --- 4. 展示步骤详情 (隐藏禁用步骤) ---
+        # --- 4. 展示步骤详情（隐藏禁用步骤，二级缩进 + 分隔线）---
         self.stepSummaryTextbox.insert("end", "【步骤详情】\n", "title_tag")
         if not enabled_steps:
-            self.stepSummaryTextbox.insert("end", "暂无启用的步骤，请点击下方按钮编辑。\n", "warn_tag")
+            self.stepSummaryTextbox.insert("end", f"{INDENT_L1}暂无启用的步骤，请点击下方按钮编辑。\n", "warn_tag")
         else:
-            # ==================== 修改：新增延迟信息中文映射字典 ====================
+            # 延迟类型中文映射字典
             delay_type_map = {"none": "无", "fixed": "固定", "wait_release": "等待释放"}
-            # =====================================================================
 
             for i, step in enumerate(enabled_steps):
-                # 只展示启用的步骤，序号需要加上1
-                self.stepSummaryTextbox.insert("end", f" {i + 1}. ", "key_tag")
+                # 步骤序号行（一级缩进）
+                self.stepSummaryTextbox.insert("end", f"{INDENT_L1}{i + 1}. ", "key_tag")
 
                 # 获取动作显示名
                 action_key = step.get("action", "")
@@ -445,33 +453,37 @@ class ShortcutEditWindow(ctk.CTkToplevel):
                 display_name = action_def.displayName.split('\n')[0] if action_def else action_key
                 self.stepSummaryTextbox.insert("end", f"{display_name}\n", "val_tag")
 
-                # 深缩进展示备注
+                # 二级缩进展示备注
                 note = step.get("note", "")
                 if note:
-                    self.stepSummaryTextbox.insert("end", f" 备注: {note}\n")
+                    self.stepSummaryTextbox.insert("end", f"{INDENT_L2}备注: {note}\n")
 
-                # ==================== 新增：展示该步骤的延迟信息 ====================
+                # 二级缩进展示延迟信息
                 delay_cfg = step.get("delayAfter", {})
                 delay_type = delay_cfg.get("type", "none")
                 delay_val = delay_cfg.get("value", 0)
                 if delay_type != "none":
-                    # 映射为中文并带上毫秒单位
                     delay_text = f"{delay_type_map.get(delay_type, '未知')} {delay_val} 毫秒"
-                    self.stepSummaryTextbox.insert("end", " 延迟: ", "key_tag")
+                    self.stepSummaryTextbox.insert("end", f"{INDENT_L2}延迟: ", "key_tag")
                     self.stepSummaryTextbox.insert("end", f"{delay_text}\n", "val_tag")
-                # =================================================================
 
-                # 展示参数
+                # 二级缩进展示参数
                 params = step.get("actionParams", {})
                 if params and action_def:
                     for spec in action_def.params:
                         val = params.get(spec.key, "")
                         if val:
                             clean_label = spec.label.replace('\n', ' ')
-                            self.stepSummaryTextbox.insert("end", f" {clean_label}: ", "key_tag")
+                            self.stepSummaryTextbox.insert("end", f"{INDENT_L2}{clean_label}: ", "key_tag")
                             # 简单处理多行文本，只取第一行展示
                             val_str = str(val).split('\n')[0]
                             self.stepSummaryTextbox.insert("end", f"{val_str}\n", "val_tag")
+
+                # ==================== 新增：每步结束后加分隔线 ====================
+                # 最后一步后面不加，避免末尾出现孤零零的分隔线
+                if i < len(enabled_steps) - 1:
+                    self.stepSummaryTextbox.insert("end", f"{INDENT_L1}{SEPARATOR}\n", "sep_tag")
+                # ==============================================================
 
         # --- 5. 末尾汇总禁用步骤 ---
         disabled_count = len(all_steps) - single_count
