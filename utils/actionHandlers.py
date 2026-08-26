@@ -15,10 +15,33 @@ from utils.actionRegistry import registerActionHandler, ACTION_REGISTRY
 from utils.interpreterRegistry import getInterpreterSpec
 from core.configManager import loadUserBlacklist
 
+from utils.keyValidator import validate_key_combination
 
 
 
 # ==================== 工具函数 ====================
+
+def _releaseHeldModifiers(kb: keyboard.Controller | None = None):
+    """释放可能仍被物理按住的修饰键（左右变体全覆盖）。
+
+    背景：用户以 ctrl+alt+k 触发快捷键时，手指还压着 Ctrl/Alt，
+    此时不释放就直接模拟其他键，发出去的组合会被污染（如变成 Ctrl+Alt+V）。
+
+    说明：
+    1. 原为 _simulate_input 的内联代码，现抽成公共函数，
+       供 粘贴文本 / 插入日期时间 / 模拟按键(simulateKeys) 三处共用。
+    2. 特意不处理 Win/Cmd 键 —— 模拟期间松开 Win 可能误触开始菜单等
+       系统行为，风险大于收益。此取舍与抽函数前的原始行为完全一致。
+    """
+    if kb is None:
+        kb = keyboard.Controller()
+    kb.release(keyboard.Key.ctrl_l)
+    kb.release(keyboard.Key.ctrl_r)
+    kb.release(keyboard.Key.alt_l)
+    kb.release(keyboard.Key.alt_r)
+    kb.release(keyboard.Key.shift_l)
+    kb.release(keyboard.Key.shift_r)
+
 
 def _simulate_input(text: str):
     """将文本放入剪贴板并模拟 Ctrl+V 粘贴"""
@@ -32,14 +55,9 @@ def _simulate_input(text: str):
     wc.SetClipboardData(wc.CF_UNICODETEXT, data)
     wc.CloseClipboard()
 
-    # 2. 释放可能还按着的修饰键（防止 Ctrl+V 变成 Ctrl+Ctrl+V）
+    # 2. 释放可能还按着的修饰键（改为调用公共函数，逻辑不变）
     kb = keyboard.Controller()
-    kb.release(keyboard.Key.ctrl_l)
-    kb.release(keyboard.Key.ctrl_r)
-    kb.release(keyboard.Key.alt_l)
-    kb.release(keyboard.Key.alt_r)
-    kb.release(keyboard.Key.shift_l)
-    kb.release(keyboard.Key.shift_r)
+    _releaseHeldModifiers(kb)
     time.sleep(0.05)
 
     # 3. 模拟按下 Ctrl+V 粘贴
@@ -47,6 +65,7 @@ def _simulate_input(text: str):
     with kb.pressed(keyboard.Key.ctrl):
         kb.press(v_key)
         kb.release(v_key)
+
 
 
 # ==================== 动作处理器 ====================
@@ -295,6 +314,174 @@ def doCustomCommand(params: dict, context: dict | None = None):
             )
     except Exception as e:
         raise RuntimeError(f"执行命令失败:\n{str(e)}")
+
+# ==================== 新增：键盘-模拟按键（仅动作组内可见） ====================
+
+# 别名归一化表：与 executor._normalizeAlias 口径完全一致。
+# 不直接 import executor 的原因：executor.py 导入了本模块(actionHandlers)，
+# 反向导入会形成循环依赖，故维护一份最小副本，修改时需两边同步。
+_SIMULATE_ALIAS_MAP = {
+    "control": "ctrl", "control_l": "ctrl_l", "control_r": "ctrl_r",
+    "option": "alt", "option_l": "alt_l", "option_r": "alt_r",
+    "command": "cmd", "windows": "cmd",
+}
+
+# 修饰键集合：解析出的 token 若属于这里，则作为"按住不放"的前缀处理；
+# 其余 token 视作"末位实体键"。允许纯修饰键组合（如只发一个 shift），
+# 这恰好支撑了 hint 里"切输入法"配方——很多机器单击 Shift 即切换中英。
+_SIMULATE_MODIFIER_TOKENS = {
+    "ctrl", "ctrl_l", "ctrl_r",
+    "shift", "shift_l", "shift_r",
+    "alt", "alt_l", "alt_r",
+    "cmd", "cmd_l", "cmd_r",
+}
+
+# 小键盘运算键映射：pynput 在 Windows 后端没有这些 Key 属性
+# （监听端收到的是带 vk 的 KeyCode），因此发送端也只能按虚拟键码直发。
+# 数值来源：Windows 虚拟键码常量 (VK_ADD=107 等)；enter 无独立小键盘 vk，用主回车 13 近似。
+_SIMULATE_NUMPAD_VK = {
+    "numpad_add": 107, "numpad_subtract": 109, "numpad_multiply": 106,
+    "numpad_divide": 111, "numpad_decimal": 110, "numpad_enter": 13,
+}
+
+# 特殊键白名单：与 keyValidator.LEGAL_KEYS 的"特殊键"区段一一对应，
+# 这些名字恰好都是 pynput.Key 的真实属性名，可直接 getattr 取用。
+# （显式列举而非盲目 getattr，避免拿到注册表之外的意外属性）
+_SIMULATE_SPECIAL_KEYS = {
+    "space", "tab", "enter", "esc", "up", "down", "left", "right",
+    "backspace", "delete", "home", "end", "page_up", "page_down",
+    "caps_lock", "insert",
+}
+
+
+def _parseSimulateTokens(key_str: str) -> list[str]:
+    """把按键组合字符串拆成 token 列表。
+
+    拆分规则与 keyValidator.validate_key_combination 保持同源：
+    转 小写 -> 按 '+' 分割 -> 去空格和空片段 -> 把单词 'plus' 还原为真实 '+' 字符。
+    注意：不能直接使用校验器返回的 cleaned 字符串再拆，
+    因为 'plus' 在 cleaned 里已被还原成 '+'，二次 split 会把它吃掉。
+    """
+    tokens = [p.strip().lower() for p in key_str.split('+') if p.strip()]
+    return ["+" if t == "plus" else t for t in tokens]
+
+
+def _tokenToPynputObject(token: str):
+    """单个 token -> pynput 可按压对象（Key 枚举或 KeyCode）。查不到就抛错。
+
+    映射原则：镜像监听端 executor._normalizeSingleKey 的反推——
+    监听端用哪些 vk 区间识别按键，发送端就用同一批 vk 发出去，
+    保证"它能听到的，就一定能发出去"（vk 区间三段对称：字母/主数字/小键盘数字）。
+    """
+    # 1) 小键盘运算键：走专属 vk 字典（pynput 无对应属性，见常量表注释）
+    if token in _SIMULATE_NUMPAD_VK:
+        return keyboard.KeyCode.from_vk(_SIMULATE_NUMPAD_VK[token])
+
+    # 2) 修饰键与小键盘数字：都是 pynput.Key 的真实属性名，直取
+    #    （ctrl_l / numpad_5 / f1 ... ；f 键同样命中此分支）
+    if token in _SIMULATE_MODIFIER_TOKENS:
+        return getattr(keyboard.Key, token)
+    if token.startswith("numpad_"):
+        return getattr(keyboard.Key, token)
+    # 功能键 F1~F12：属性名就是 f1~f12
+    if len(token) >= 2 and token[0] == "f" and token[1:].isdigit():
+        num = int(token[1:])
+        if 1 <= num <= 12:
+            return getattr(keyboard.Key, token)
+
+    # 3) 单个字母 a-z：用 vk 直发而非 from_char，保证跨键盘布局稳定，
+    #    且 vk=65+i 与监听端字母区间严格对称
+    if len(token) == 1 and "a" <= token <= "z":
+        return keyboard.KeyCode.from_vk(ord(token.upper()))
+
+    # 4) 主键盘数字 0-9：vk 48~57，与监听端数字区间一致
+    if token.isdigit() and len(token) == 1:
+        return keyboard.KeyCode.from_vk(48 + int(token))
+
+    # 5) 加号键：这是唯一以"字符"身份存在的合法键（用户须写 plus 触发）
+    if token == "+":
+        return keyboard.KeyCode.from_char("+")
+
+    # 6) 其余特殊键：空格/方向键/F区外剩余项等，直取枚举
+    if token in _SIMULATE_SPECIAL_KEYS:
+        return getattr(keyboard.Key, token)
+
+    # 兜底防线：理论上经过 validate_key_combination 放行的 token 都能走到上面，
+    # 能落到这里说明校验器与映射表出现了不同步，明确报错方便排查。
+    raise RuntimeError(f"未知的按键 token: '{token}'\n（校验器与发送映射表不同步，请反馈此问题）")
+
+
+def doSimulateKeys(params: dict, context: dict | None = None):
+    """动作：向当前活动窗口发送指定的【单个】按键组合（仅动作组内可用）。
+
+    设计边界（勿越界回加）：
+    - 一步只发一个组合：连发场景 = 复制 N 个步骤 + 每步延迟控制节奏；
+    - 无重复次数、无按住时长：同上，属于动作组层的职责；
+    - 保存时无格式校验（设计定稿方案A）：此处校验是唯一运行时防线，
+      错误信息只会出现在试运行日志里，正式执行仅打印控制台。
+    """
+    # ── 第一步：取参数 ──
+    keys = str(params.get("keys", "")).strip()
+    if not keys:
+        return  # 空参数静默返回（executor 层的必填校验通常拦不到手改 JSON 的空串）
+
+    # ── 第二步：格式兜底校验（唯一防线，结果只进日志通道） ──
+    is_valid, msg, cleaned = validate_key_combination(keys)
+    if not is_valid:
+        # 抛错给 ActionGroupPlayer 捕获 → 试运行日志可见 / 正式执行仅 print
+        raise RuntimeError(
+            f"按键组合格式不合法: {msg}\n"
+            f"输入内容: {keys}\n"
+            f"请在动作组编辑窗点「▶ 试运行」排查；可用键名参考快捷键录入规则。"
+        )
+    # 注意：不使用 cleaned 做 token 化（'plus' 已被还原为 '+' 会丢字），
+    # 校验仅作为门卫，token 解析以原始输入为准（语义相同）。
+
+    # ── 第三步：token 解析与分类 ──
+    tokens = _parseSimulateTokens(tokens_src := keys)  # noqa: F841 （保留命名便于断点调试）
+    modifier_objs: list = []   # 先按下的前缀（按住型）
+    normal_objs: list = []     # 组合末位的实体键
+    for t in tokens:
+        obj = _tokenToPynputObject(t)
+        if t in _SIMULATE_MODIFIER_TOKENS:
+            modifier_objs.append(obj)
+        else:
+            normal_objs.append(obj)
+    # 同名重复 token（如手滑写了 ctrl+ctrl）不特判：多按一次多放一次，无害且省分支。
+
+    # ── 第四步：释放物理残留修饰键，防组合被污染（与粘贴文本共用逻辑）──
+    kb = keyboard.Controller()
+    _releaseHeldModifiers(kb)
+    time.sleep(0.05)
+
+    # ── 第五步：核心发送 —— 按下 → 微延时 → 释放 ──
+    # pressed_stack 记录"实际成功按下"的对象，用于异常兜底逆序释放，
+    # 防止中途出错导致按键卡死（与 mouseDrag 的保护思路一致）。
+    pressed_stack: list = []
+    try:
+        # 5.1 先按住所有修饰键（顺序无关紧要，逆序释放即可）
+        for obj in modifier_objs:
+            kb.press(obj)
+            pressed_stack.append(obj)
+        # 5.2 再按下实体键（支持多实体键同时按住的场景，虽极少用到）
+        for obj in normal_objs:
+            kb.press(obj)
+            pressed_stack.append(obj)
+        # 5.3 约 30ms 微延时：给目标程序留出识别组合的时间窗，
+        #     否则瞬时按下-释放可能被个别程序当作噪声过滤掉
+        time.sleep(0.03)
+    except Exception as e:
+        raise RuntimeError(f"模拟按键失败:\n{str(e)}")
+    finally:
+        # 无论成功与否，一律逆序释放所有已按下的键，保证现场干净
+        for obj in reversed(pressed_stack):
+            try:
+                kb.release(obj)
+            except Exception:
+                pass  # 释放失败不再抛出，避免掩盖原始错误
+
+    # 无循环、无计时器 —— 到此即结束，节奏控制权完全交还给动作组的 delayAfter。
+
 
 # ==================== 鼠标动作处理器 ====================
 
@@ -570,6 +757,7 @@ def initActionHandlers():
     registerActionHandler("mediaControl", doMediaControl)
     registerActionHandler("insertDateTime", doInsertDateTime)
     registerActionHandler("customCommand", doCustomCommand)
+    registerActionHandler("simulateKeys", doSimulateKeys)
     registerActionHandler("mouseMoveTo", doMouseMoveTo)
     registerActionHandler("mouseMoveStep", doMouseMoveStep)
     registerActionHandler("mouseClick", doMouseClick)
@@ -577,9 +765,7 @@ def initActionHandlers():
     registerActionHandler("mouseDrag", doMouseDrag)
     registerActionHandler("appControl", doAppControl)
     registerActionHandler("appControlSafe", doAppControlSafe)
-    # ==================== 注册新的方案切换动作 ====================
     registerActionHandler("switchScheme", doSwitchScheme)
-    # ============================================================
     registerActionHandler("actionGroup", doActionGroup)
 
     for action_def in ACTION_REGISTRY:

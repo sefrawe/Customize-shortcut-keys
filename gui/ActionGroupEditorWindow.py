@@ -303,8 +303,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             side="left", padx=1)
         ctk.CTkButton(btn_frame, text="↓", width=30, command=lambda rf=rowFrame: self._moveStep(rf, 1)).pack(
             side="left", padx=1)
-        ctk.CTkButton(btn_frame, text="删", width=30, fg_color="#A30000", hover_color="#7A0000",
-                      command=lambda rf=rowFrame: self._deleteStep(rf)).pack(side="left", padx=1)
+        ctk.CTkButton(btn_frame, text="复制", width=30, command=lambda rf=rowFrame: self._copyStep(rf)).pack(side="left",padx=1)
+        ctk.CTkButton(btn_frame, text="删除", width=30, fg_color="#A30000", hover_color="#7A0000",command=lambda rf=rowFrame: self._deleteStep(rf)).pack(side="left", padx=1)
 
         # 存储控件引用
         rowFrame._action_menu = action_menu
@@ -391,6 +391,36 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         if 0 <= new_index < len(self.steps_data):
             self.steps_data[index], self.steps_data[new_index] = self.steps_data[new_index], self.steps_data[index]
             self._renderSteps()
+
+    def _copyStep(self, rowFrame):
+        """复制当前行步骤一份，插入到其正下方。
+
+        行为规格（设计定稿）：
+        1. 必须 deepcopy 整个 step —— 浅拷贝会让新旧两步共享同一个
+           actionParams / delayAfter 子字典，之后改任何一边都会连带改另一边，
+           这是本功能唯一的真坑点；
+        2. enabled 原样复制，不强制禁用。理由链：能处于启用态的步骤，
+           必填参数已通过启用前校验 -> 复制体参数天然齐全 ->
+           保持启用合法且顺滑（典型用法："复制切输入法那步->改个键名->切回来"）；
+        3. 50 步上限与 addStep 同款策略：点击时拦截+弹提示，
+           不做逐行动态置灰（顶部添加按钮已有整体警示，避免双套状态同步）；
+        4. 动作组 steps 无 id 字段、纯靠列表序管理，无需编号去重逻辑。
+        """
+        row_frames = self._getStepRows()
+        index = row_frames.index(rowFrame)
+
+        # 上限拦截：与 addStep 口径完全一致
+        if len(self.steps_data) >= 50:
+            messagebox.showwarning("上限提示", "已达到单次 50 步上限，无法继续复制！", parent=self)
+            return
+
+        # ★ 核心：深拷贝整份步骤数据（含嵌套的参数字典与延迟配置）
+        new_step = copy.deepcopy(self.steps_data[index])
+
+        # 插入正下方后整体重渲染（复用现有渲染管线，统计栏/预估时间自动刷新）
+        self.steps_data.insert(index + 1, new_step)
+        self._renderSteps()
+
 
     def _deleteStep(self, rowFrame):
         """删除某行"""
