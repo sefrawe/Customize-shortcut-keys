@@ -1,4 +1,6 @@
 ''' 系统托盘功能 '''
+import threading
+
 import pystray
 from PIL import Image
 from pathlib import Path
@@ -50,6 +52,10 @@ class TrayIconManager:
         current_enabled = getStartupEnabledShortcutScheme(configDirectory)
         current_name = current_enabled["name"] if current_enabled else None
 
+        # ==================== 新增：获取忙碌状态 ====================
+        is_busy = getattr(self.main_window.executor, 'is_busy', False) if self.main_window.executor else False
+        # ==========================================================
+
         # 2. 构建二级菜单项（方案列表）
         submenu_items = []
         submenu_items.append(
@@ -71,7 +77,7 @@ class TrayIconManager:
                 )
             )
 
-        # 3. 获取当前监听状态，决定显示什么文字
+        # 3. 获取当前监听状态
         is_paused = getattr(self.main_window, 'is_listening_paused', False)
         listen_text = "恢复监听" if is_paused else "暂停监听"
 
@@ -79,14 +85,37 @@ class TrayIconManager:
         return [
             pystray.MenuItem("显示主窗口", self._on_show, default=True),
             pystray.Menu.SEPARATOR,
+            # ==================== 新增：忙碌时禁用方案切换 ====================
             pystray.MenuItem(
                 f"当前启用: {current_name}" if current_name else "启用方案选择 ▶",
-                pystray.Menu(*submenu_items)
+                pystray.Menu(*submenu_items),
+                enabled=lambda item: not is_busy
             ),
+            # ==============================================================
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem(listen_text, self._on_toggle_listening),  # 新增的监听切换项
-            pystray.MenuItem("退出程序", self._on_quit)
+            pystray.MenuItem(listen_text, self._on_toggle_listening),
+            # ==================== 新增：强制停止动作组 ====================
+            pystray.MenuItem(
+                "⏸ 平滑停止动作组",
+                self._on_soft_stop_action_group,
+                # 只有在忙碌且尚未发送过软停止信号时才显示
+                visible=lambda item: is_busy and not getattr(self.main_window.executor, 'action_group_soft_stop_event',
+                                                             threading.Event()).is_set()
+            ),
+            pystray.MenuItem(
+                "⏹ 强制停止动作组",
+                self._on_force_stop_action_group,
+                visible=lambda item: is_busy
+            ),
+            # ==============================================================
+            # ==================== 新增：忙碌时禁用退出 ====================
+            pystray.MenuItem("退出程序", self._on_quit, enabled=lambda item: not is_busy)
+            # ==============================================================
         ]
+
+    def _on_force_stop_action_group(self, icon=None, item=None):
+        """点击强制停止动作组时的回调"""
+        self.main_window.after(0, self.main_window.force_stop_action_group)
 
     def _on_toggle_listening(self, icon=None, item=None):
         """点击暂停/恢复监听时的回调"""
@@ -120,4 +149,8 @@ class TrayIconManager:
 
     def run(self):
         self.icon.run()
+
+    def _on_soft_stop_action_group(self, icon=None, item=None):
+        """点击平滑停止动作组时的回调"""
+        self.main_window.after(0, self.main_window.soft_stop_action_group)
 

@@ -466,9 +466,8 @@ def doMouseDrag(params: dict, context: dict | None = None):
 
 def doAppControl(params: dict, context: dict | None = None):
     """
-    动作：操作软件自身
-    这是一个特殊的动作，它本身不直接操作 UI 或配置，
-    而是通过 context 中的 app_control_callback 将指令抛回给主线程执行，
+    动作：操作软件自身 (无参数版)
+    通过 context 中的 app_control_callback 将指令抛回给主线程执行，
     从而彻底规避跨线程操作 Tkinter UI 导致的崩溃问题。
     """
     command = params.get("command", "")
@@ -477,17 +476,93 @@ def doAppControl(params: dict, context: dict | None = None):
 
     # 从上下文中获取主线程注入的回调函数
     app_control_callback = (context or {}).get("app_control_callback")
-
     if app_control_callback:
-        # 将指令字符串抛回主线程处理
-        app_control_callback(command)
+        # ==================== 设计25修改：移除目标方案参数 ====================
+        # 因为 appControl 现在不再负责方案切换，所以只传 command，目标方案传空字符串
+        app_control_callback(command, "")
+        # =====================================================================
     else:
         print("警告：未配置 app_control_callback，无法执行软件控制指令。")
 
 
+def doAppControlSafe(params: dict, context: dict | None = None):
+    """
+    动作：操作软件自身(安全版)
+    与 doAppControl 逻辑相同，仅支持的指令受限。
+    专供动作组使用，确保宏执行期间不会意外退出或切换方案。
+    """
+    command = params.get("command", "")
+    if not command:
+        return
+
+    app_control_callback = (context or {}).get("app_control_callback")
+    if app_control_callback:
+        # 为了接口签名统一，安全版也传个空字符串作为 target_scheme
+        app_control_callback(command, "")
+    else:
+        print("警告：未配置 app_control_callback，无法执行安全软件控制指令。")
+
+
+# ==================== 设计25新增：独立的方案切换动作 ====================
+def doSwitchScheme(params: dict, context: dict | None = None):
+    """
+    动作：切换启用方案
+    将指定方案设为启用，并互斥禁用其他所有方案。
+    如果传入的方案名为空字符串，则代表禁用所有方案。
+    """
+    # 提取下拉框选择的方案名 (如果选了"（无）"，存进 JSON 的就是空字符串)
+    target_scheme = params.get("targetSchemeSelect", "").strip()
+
+    app_control_callback = (context or {}).get("app_control_callback")
+    if app_control_callback:
+        # 复用主线程的 "启用指定方案" 指令通道
+        # 注意：主线程的 _handle_app_control 会判断 target_scheme 是否为空
+        app_control_callback("启用指定方案", target_scheme)
+    else:
+        print("警告：未配置 app_control_callback，无法执行方案切换指令。")
+
+
+# =====================================================================
+
+
+def doActionGroup(params: dict, context: dict | None = None):
+    """动作：动作组执行入口"""
+    # 提取常规参数
+    stop_on_error = params.get("stopOnError", "停止整个动作组")
+    steps = params.get("steps", [])
+    # 提取新增的进阶参数
+    confirm_all = params.get("confirmAllAtOnce", False)
+    loop_count = params.get("loopCount", "1")
+    max_exec_time = params.get("maxExecutionTime", "60")
+
+    from utils.actionGroupExecutor import ActionGroupPlayer
+
+    # 从 context 中获取 Executor 注入的中断事件，用于托盘紧急停止
+    interrupt_event = (context or {}).get("interrupt_event")
+    # ==================== Bug修复：获取软停止事件 ====================
+    soft_stop_event = (context or {}).get("soft_stop_event")
+    # ==============================================================
+
+    # 实例化回放器，正式执行不传 log_callback(不输出到UI)
+    player = ActionGroupPlayer(
+        steps,
+        stop_on_error,
+        context,
+        interrupt_event,
+        # ==================== Bug修复：把软停止事件传进去 ====================
+        soft_stop_event,
+        # =================================================================
+        log_callback=None,
+        confirm_all=confirm_all,
+        loop_count=loop_count,
+        max_exec_time=max_exec_time
+    )
+
+    # 开始阻塞执行(此方法在 Executor 的子线程中运行)
+    player.play()
+
 
 # ==================== 注册 ====================
-
 def initActionHandlers():
     """在模块加载时，将所有 handler 函数注册到动作注册表"""
     registerActionHandler("pasteText", doPasteText)
@@ -501,6 +576,12 @@ def initActionHandlers():
     registerActionHandler("mouseScroll", doMouseScroll)
     registerActionHandler("mouseDrag", doMouseDrag)
     registerActionHandler("appControl", doAppControl)
+    registerActionHandler("appControlSafe", doAppControlSafe)
+    # ==================== 注册新的方案切换动作 ====================
+    registerActionHandler("switchScheme", doSwitchScheme)
+    # ============================================================
+    registerActionHandler("actionGroup", doActionGroup)
+
     for action_def in ACTION_REGISTRY:
         # 跳过 "（无动作）" 这个特殊动作
         if action_def.key == "":

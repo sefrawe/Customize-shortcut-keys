@@ -391,32 +391,40 @@ class MainWindow(ctk.CTk):
         # 抛回主线程执行
         self.after(0, _ask)
 
-    def _app_control_callback(self, command: str):
-        """
-        供子线程调用的软件控制回调。
-        这是一个“桥梁”方法，接收到子线程的指令后，立刻通过 self.after(0, ...)
-        将实际工作抛回 Tkinter 主线程的事件队列中排队执行，保证线程安全。
-        """
-        self.after(0, lambda: self._handle_app_control(command))
+    def soft_stop_action_group(self):
+        """供托盘调用的平滑停止动作组功能"""
+        if self.executor and self.executor.is_busy:
+            # 检查是否已经发送过软停止信号，防止重复发送
+            if self.executor.action_group_soft_stop_event.is_set():
+                messagebox.showinfo("提示", "已经发送过平滑停止信号了，请耐心等待当前步骤完成。")
+            else:
+                self.executor.action_group_soft_stop_event.set()
+                messagebox.showinfo("提示", "已发送平滑停止信号，动作组将在当前步骤完成后自动停止。")
+        else:
+            messagebox.showinfo("提示", "当前没有正在执行的动作组。")
 
-    def _handle_app_control(self, command: str):
+    def _app_control_callback(self, command: str, target_scheme: str = ""):
+        """ 供子线程调用的软件控制回调。 这是一个“桥梁”方法，接收到子线程的指令后，
+        立刻通过 self.after(0, ...) 将实际工作抛回 Tkinter 主线程的事件队列中排队执行，保证线程安全。
+        """
+        # ==================== 修改：传递 target_scheme ====================
+        self.after(0, lambda: self._handle_app_control(command, target_scheme))
+        # =================================================================
+
+    def _handle_app_control(self, command: str, target_scheme: str = ""):
         """
         [仅在主线程执行] 实际处理各项软件控制指令。
         Tkinter 的 after 机制保证了此方法内部的代码是串行执行的，无需额外加锁。
         """
         if command == "显示主窗口":
             self.show_window()
-
         elif command == "隐藏主窗口":
             self.hide_window()
-
         elif command == "刷新执行器":
             # 相当于触发了全局联动刷新
             self.refreshExecutor()
-
         elif command == "退出软件":
             self.quit_app()
-
         elif command in ("切换到上一个方案", "切换到下一个方案"):
             # 1. 获取所有方案，按名字字母排序（与左侧导航栏顺序一致）
             all_schemes = getShortcutSchemes(configDirectory)
@@ -445,6 +453,14 @@ class MainWindow(ctk.CTk):
 
             # 4. 复用托盘切换方案的方法：互斥修改配置并刷新UI和执行器
             self.switch_scheme_from_tray(target_name)
+
+        # ==================== 设计25修改：支持通过空字符串禁用所有方案 ====================
+        elif command == "启用指定方案":
+            # 如果 target_scheme 为空字符串，代表用户在下拉框选择了"（无）"，即禁用所有方案
+            # switch_scheme_from_tray(None) 会互斥地禁用所有方案
+            scheme_to_enable = target_scheme if target_scheme else None
+            self.switch_scheme_from_tray(scheme_to_enable)
+        # =====================================================================
 
     def set_tray_icon(self, tray_icon):
         """绑定托盘管理器实例"""
@@ -478,6 +494,10 @@ class MainWindow(ctk.CTk):
             - 如果是具体方案名，则启用该方案，并互斥禁用其他所有方案。
             - 如果是 None，则禁用所有方案。
         """
+        # 拦截动作组执行期间的切换操作
+        if self.executor and self.executor.is_busy:
+            messagebox.showwarning("繁忙", "动作组正在执行中，无法切换方案！\n请等待执行完毕或使用“强制停止动作组”。")
+            return
         # 1. 读取所有方案，互斥修改配置
         all_schemes = getShortcutSchemes(configDirectory)
         for scheme in all_schemes:
@@ -509,6 +529,15 @@ class MainWindow(ctk.CTk):
             if self.executor:
                 self.executor.stop()
             self.is_listening_paused = True
+
+    def force_stop_action_group(self):
+        """供托盘调用的强制停止动作组功能"""
+        if self.executor and self.executor.is_busy:
+            self.executor.action_group_interrupt_event.set()
+            messagebox.showinfo("提示", "已发送中断信号，动作组将在当前步骤完成后停止。")
+        else:
+            messagebox.showinfo("提示", "当前没有正在执行的动作组。")
+
 
 
 

@@ -80,6 +80,14 @@ class Executor:
         # 动作执行状态锁，防止重入和模拟按键干扰
         self.isExecuting = False
 
+        # 动作组全局忙碌状态
+        self.is_busy = False
+        # 供托盘紧急中断动作组使用 (硬停止，立即打断)
+        self.action_group_interrupt_event = threading.Event()
+
+        # 供托盘平滑停止动作组使用 (软停止，允许当前步执行完毕后在下一步前退出)
+        self.action_group_soft_stop_event = threading.Event()
+
         # 定义一个布尔值，用于表示当前监听器是否正在监听按键事件。如果正在监听，则为 True；否则为 False。
         self.isListening = False
 
@@ -348,6 +356,14 @@ class Executor:
         """动作分发器：从注册表获取定义并执行（运行在独立子线程中）"""
         self.isExecuting = True
 
+        #动作组忙碌状态控制
+        is_action_group = (shortcut.get("action") == "actionGroup")
+        if is_action_group:
+            self.is_busy = True
+            self.action_group_interrupt_event.clear()  # 执行前清空中断信号
+            # 每次开始新的动作组前，清理上一次可能残留的软停止信号
+            self.action_group_soft_stop_event.clear()
+
         try:
             shortcutName = shortcut.get("name", "")
             actionKey = shortcut.get("action", "")
@@ -378,7 +394,10 @@ class Executor:
                 # 构建 context 并传递给 handler，新增 appControlCallback
                 context = {
                     "confirm_callback": self.confirmCallback,
-                    "app_control_callback": self.appControlCallback
+                    "app_control_callback": self.appControlCallback,
+                    "interrupt_event": self.action_group_interrupt_event if is_action_group else None,
+                    # 只有动作组才需要传入软停止事件，普通动作传 None
+                    "soft_stop_event": self.action_group_soft_stop_event if is_action_group else None
                 }
                 actionDef.handler(actionParams, context)
             except Exception as e:
@@ -386,6 +405,11 @@ class Executor:
         finally:
             # 动作执行完毕后的善后工作
             self.isExecuting = False
+
+            # 解除忙碌状态
+            if is_action_group:
+                self.is_busy = False
+
             # 清空监听器中的按键集合，防止执行期间模拟按键造成的残留状态干扰
             if self.listener is not None:
                 self.listener.pressedKey.clearKeys()
