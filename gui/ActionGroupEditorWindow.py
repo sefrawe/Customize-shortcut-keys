@@ -15,7 +15,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
     def __init__(self, parent, steps_data_full):
         """ ... """
         super().__init__(parent)
-        self.title("编辑动作组步骤")
+        self.title("编辑动作组步骤（此窗口涉及修改配置文件，不允许最小化和对软件进行其他操作）")
 
         # ==================== 修改：读取全局配置设置窗口大小 ====================
         self.minsize(700, 600)  # 固定最小尺寸，防止UI崩溃

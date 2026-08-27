@@ -26,6 +26,7 @@
 1. 标准化不再合并：
    - _normalizeAlias: 只做等价拼写转换（如 control -> ctrl），不再将 ctrl_l/ctrl_r 强行合并为 ctrl。
    _normalizeSingleKey: 先查 name 特殊键别名体系；常规字符键一律经 vkKeyMap.VK_TO_NAME 以虚拟键码判定（物理键位语义，免疫修饰键/大写锁定/输入法污染；Bug#30 重构核心）。
+ （实现体已下沉至 utils/keyNormalizer.py，本文件仅保留兼容委托）
 
 2. 智能匹配机制：
    - _is_key_match / _isCombinationMatch: 如果配置写统称(如 'ctrl')，则允许监听到的具体特称(如 'ctrl_l' 或 'ctrl_r')匹配成功；
@@ -48,7 +49,9 @@ from utils.actionHandlers import initActionHandlers
 from utils.actionRegistry import getActionDefByKey
 from utils.shortcutUtils import getShortcutBySchemeName, getStartupEnabledShortcutScheme
 
-from utils.vkKeyMap import VK_TO_NAME
+# 【归一化下沉】实现体已平移至 utils/keyNormalizer.py（唯一真相源），本文件改为委托。
+# VK_TO_NAME 在本文件已无直接使用者，原导入随之移除；未来确需 vk 查询时再按需导入。
+from utils.keyNormalizer import normalizeSingleKey, normalizeAlias
 
 
 initActionHandlers()
@@ -244,57 +247,17 @@ class Executor:
         return normalized
 
     def _normalizeSingleKey(self, key):
+        """【已下沉】实现体平移至 utils.keyNormalizer.normalizeSingleKey（唯一真相源）。
+
+        本方法仅保留为兼容委托：executor 内部调用点（_normalizePressedKeys 等）
+        零感知，无需改动。三级漏斗的完整说明、判定顺序铁律、Bug#30 重构背景、
+        调用方约定，全部随实现体迁移至 utils/keyNormalizer.py，以彼处为准。
         """
-        将 pynput 按键事件对象归一化为规范键名字符串（Bug#30 重构核心）。
-
-        判定顺序【不可调换】，三级漏斗从可靠到不可靠：
-          ① 特殊键   有 name 属性 → 走别名归一化
-                     （ctrl_l / f5 / space 等由 _normalizeAlias 统一收口，
-                      此路原有逻辑不动）
-          ② 常规键★ vk 命中 vkKeyMap.VK_TO_NAME → 直接采用规范名
-                     vk 是物理键位编号，天生免疫修饰键/大小写锁定/输入法
-                     三种状态污染——这是本次重构的全部意义所在。
-          ③ char兜底 仅当 vk 未收录且无 name 的极罕见场景。
-                     ⚠ 此路径的产物可能被修饰键污染（如 Ctrl+C 给出 '\x03'），
-                     属于"知道不可靠但留着以防万一"的容错位。
-                     边界铁律：永远不许靠它实现新功能（见记事本·边界备忘3）。
-
-        参数: key —— pynput 监听回调交来的按键对象
-        返回: 规范键名 str；无法识别返回 None（调用方按既有逻辑忽略该键）
-        """
-        if key is None:
-            return None
-
-        # ── ① 特殊键：pynput 的 Key 枚举成员才有 name 属性 ─────────────
-        name = getattr(key, "name", None)
-        if name:
-            return self._normalizeAlias(str(name).lower())
-
-        # ── ② vk 总表查询：本轮唯一的新增主路径 ★ ─────────────────────
-        vk = getattr(key, "vk", None)
-        if vk is not None and vk in VK_TO_NAME:
-            return VK_TO_NAME[vk]
-
-        # ── ③ char 最后容错（不可靠路径，勿依赖）─────────────────────
-        ch = getattr(key, "char", None)
-        if ch:
-            return str(ch).lower()
-
-        return None
+        return normalizeSingleKey(key)
 
     def _normalizeAlias(self, keyName):
-        """统一等价别名，但不再合并左右修饰键。"""
-        aliasMap = {
-            "control": "ctrl",
-            "control_l": "ctrl_l",
-            "control_r": "ctrl_r",
-            "option": "alt",
-            "option_l": "alt_l",
-            "option_r": "alt_r",
-            "command": "cmd",
-            "windows": "cmd",
-        }
-        return aliasMap.get(keyName, keyName)
+        """【已下沉】见 utils.keyNormalizer.normalizeAlias。仅兼容委托，零行为变化。"""
+        return normalizeAlias(keyName)
 
     # 类变量：统称 → 可匹配的特称集合
     _KEY_SUPERSET = {

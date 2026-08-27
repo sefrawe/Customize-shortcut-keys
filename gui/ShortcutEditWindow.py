@@ -52,7 +52,13 @@ from utils.actionRegistry import (
     getActionDefByDisplayName,
     getActionDefByKey
 )
-from utils.keyValidator import validate_key_combination
+# 【录入按键】键名归一化唯一真相源（第一步下沉的产物）：
+# 录入端与监听端（executor）走同一条三级漏斗链，
+# 保证"录出来的写法，监听端一定认得"——这是本功能的立身之本
+from utils.keyNormalizer import normalizeSingleKey
+# 【录入按键】LEGAL_KEYS：合法可绑定域，用于"支持/不支持绑定"的标注分类
+from utils.keyValidator import validate_key_combination, LEGAL_KEYS
+
 
 
 class ShortcutEditWindow(ctk.CTkToplevel):
@@ -186,7 +192,36 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             font=("微软雅黑", 14),
         )
         self.getCoordBtn.pack(side="left", padx=5)
+        # ==================== 「⌨ 录入按键」入口 ====================
+        # 会话激活标志占位：真正的会话状态（计数/按下集合/成员表）在
+        # start_key_capture 里每次进入时逐项重建，这里只立"未激活"标志，
+        # 供各处守卫（含 start_coord_capture 的互斥守卫）统一读取
+        self._keycap_active = False
+
+        self.keyCaptureBtn = ctk.CTkButton(
+            self.buttonFrame,
+            text="⌨ 录入按键",
+            command=self.start_key_capture,
+            font=("微软雅黑", 14),
+        )
+        # 忙碌置灰（定稿·拍板8）。编辑窗是瞬态窗口，这里只反映"打开那一刻"的
+        # 状态；绑定 FocusIn 在每次窗口获得焦点时刷新一次，弥补
+        # "动作组执行完了、按钮却还灰着"的时差。权威守卫另在点击时把关
+        self.bind("<FocusIn>", self._refresh_keycap_btn_state)
+        self._refresh_keycap_btn_state()
+        self.keyCaptureBtn.pack(side="left", padx=5)
+
         ctk.CTkButton(self.buttonFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="left", padx=5)
+        # ==================== 【加固】编辑窗销毁时的会话兜底 ====================
+        # 漏洞场景：捕获进行中用户点了编辑窗「取消」（或保存/×）→ 本窗口连同
+        # 子窗口（捕获窗）一起销毁，但 pynput 监听线程独立于 Tk 存活——
+        # 幽灵监听继续收键，executor.start() 永不执行，全局快捷键全灭。
+        # coords 时代就埋着这颗雷（轮询靠 winfo_exists 自断只是止血），
+        # 本功能因持有更多会话状态，一并兜住，坐标捕获顺手同治。
+        # 细节：<Destroy> 会对每个子控件各触发一次，必须用 event.widget is self
+        # 过滤，只在"本窗口自身"销毁时执行一次兜底。
+        self.bind("<Destroy>", self._onEditWindowDestroy)
+
 
     def _buildParamWidget(self, spec, initialValue):
         """根据规格生成具体的控件"""
@@ -580,6 +615,12 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         if not self.executor:
             messagebox.showerror("错误", "未获取到执行器实例，无法暂停全局监听")
             return
+            # ★【录入按键】新增互斥守卫：两个捕获功能都会操作 executor 的停/启
+            # 和 descriptionEntry 的写入，并行跑会出现"A 先收尾恢复了全局监听、
+            # B 还在捕获"的错乱——同一时刻只允许一个捕获会话存在
+        if getattr(self, "_keycap_active", False):
+            messagebox.showwarning("提示", "按键录入进行中，请先结束当前录入")
+            return
         self.executor.stop()
         self._coord_count = 0
         self.capture_top = ctk.CTkToplevel(self)
@@ -627,3 +668,251 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             self.capture_top.destroy()
         if self.executor:
             self.executor.start()
+
+    # ==================== 「⌨ 录入按键」功能 ====================
+    # 【定位】教学工具，不是自动录入器（设计定稿·〇）：
+    #   只负责告诉用户"某个键的正确写法"。逐键写入备注，
+    #   组合串由用户手动复制进快捷键框，本功能绝不回填 keyCombination。
+    # 【骨架来源】镜像 start_coord_capture（停执行器 → 置顶小窗 → 裸Listener
+    #   → after 抛回主线程 → finalize 恢复）。与 coords 的三处刻意不同：
+    #   ① × 绑 finalize 而非焊死——coords 用 lambda: None 挡关是因为没有
+    #      统一清理函数，被迫强制走 Esc 出口；本功能清理已由 stop_key_capture
+    #      兜住，× 若绕过它则 executor.start() 永不恢复 → 软件变哑巴；
+    #   ② 状态行事件驱动更新，无轮询循环——coords 需要轮询是因为鼠标坐标
+    #      是"持续状态"，按键是"离散事件"，语义不同不硬抄；
+    #   ③ Listener 多挂一个 on_release——长按去重集合需要释放事件来移除成员。
+
+    def _isExecutorBusy(self) -> bool:
+        """探测执行器是否正处于动作组执行中。
+
+        兼容两种可能的历史命名（isExecuting / is_busy），都不存在时视为空闲。
+        不做更重的跨线程状态订阅——编辑窗是瞬态窗口，不值得。
+        """
+        if not self.executor:
+            return False
+        return bool(
+            getattr(self.executor, "isExecuting", False)
+            or getattr(self.executor, "is_busy", False)
+        )
+
+    def _refresh_keycap_btn_state(self, event=None):
+        """按执行器忙碌态刷新「⌨ 录入按键」可用性（初始化 / FocusIn 时调用）。"""
+        if hasattr(self, "keyCaptureBtn") and self.keyCaptureBtn.winfo_exists():
+            self.keyCaptureBtn.configure(
+                state="disabled" if self._isExecutorBusy() else "normal"
+            )
+
+    def start_key_capture(self):
+        """打开按键录入捕获窗。守卫通过后：停执行器 → 建窗 → 起裸 Listener。"""
+        # ── 守卫区（顺序：执行器存在 → 忙碌 → 与坐标捕获互斥 → 自身防重入）──
+        if not self.executor:
+            messagebox.showerror("错误", "未获取到执行器实例，无法暂停全局监听")
+            return
+        if self._isExecutorBusy():
+            messagebox.showwarning("提示", "动作组正在执行，请等待执行完成后再录入按键")
+            return
+        if hasattr(self, "capture_top") and self.capture_top.winfo_exists():
+            # 坐标捕获进行中（反向守卫在 start_coord_capture 的改动③里）
+            messagebox.showwarning("提示", "坐标捕获进行中，请先结束当前捕获")
+            return
+        if self._keycap_active:
+            # 理论到不了这里（连点自己的按钮），静默返回即可
+            return
+
+        # 全局监听让位（与 coords 同款：先停，finalize 时恢复）
+        self.executor.stop()
+
+        # ── 会话状态初始化：每次进入全部重建，确保无上会话残留 ──
+        self._keycap_active = True      # 防重入标志：Esc /「完成」/ × 竞态只收尾一次
+        self._keycap_count = 0          # 会话局部计数：每次进入从"按键1"重新数
+        self._keycap_members = []       # 本次组合成员（仅收录合法键，按按下顺序）
+        self._keycap_pressed = set()    # 局部按下集合：长按去重 + Esc 条件判定共用
+        self._keycap_listener = None
+        self._keycap_top = None
+
+        # ── 置顶小窗（沿用 coords 的规格与字体风格，内容三块见下）──
+        self._keycap_top = ctk.CTkToplevel(self)
+        self._keycap_top.geometry("380x210")
+        self._keycap_top.title("按键录入模式")
+        self._keycap_top.attributes("-topmost", True)
+        # ★ 与 coords 的刻意不同①：× 绑 finalize 而非 lambda: None 焊死。
+        #   顺带这也覆盖了标题栏 Alt+F4——它发的正是 WM_CLOSE，同样优雅收尾
+        self._keycap_top.protocol("WM_DELETE_WINDOW", self.stop_key_capture)
+
+        # 内容三块（定稿·第一节）：操作说明 / 警告 / 状态行
+        ctk.CTkLabel(
+            self._keycap_top,
+            text="逐个按下要组合的键，每键会记一行到备注；\n完成后点「完成」或按 Esc，会把本次所有键的组合写入备注",
+            font=("微软雅黑", 13),
+        ).pack(pady=(12, 4))
+        ctk.CTkLabel(
+            self._keycap_top,
+            text="⚠ 监听不拦截系统行为：Win / Alt+F4 / Alt+Tab 等会真实生效，请避免使用",
+            font=("微软雅黑", 11),
+            text_color="#FFA500",
+            wraplength=350,  # 长警告文本折行显示，防止撑破窗口
+        ).pack(pady=2, padx=10)
+        self._keycap_status = ctk.CTkLabel(
+            self._keycap_top, text="已录入 0 键｜等待按下…", font=("微软雅黑", 13)
+        )
+        self._keycap_status.pack(pady=6)
+        ctk.CTkButton(
+            self._keycap_top, text="完成", command=self.stop_key_capture, width=100
+        ).pack(pady=(2, 12))
+
+        # ── 裸 Listener（不套 KeyboardListener 包装类——主监听那套按键集合
+        #    机制这里用不上，本地小集合自备，见 _keycap_pressed）──
+        #    on_press  ：记录（教学主路径）
+        #    on_release：维护按下集合（"松开才允许下一个"的另一半）
+        self._keycap_listener = pynput_keyboard.Listener(
+            on_press=self._on_keycap_press,
+            on_release=self._on_keycap_release,
+        )
+        self._keycap_listener.start()
+
+    def _on_keycap_press(self, key):
+        """录入回调。⚠ 运行在监听线程！
+
+        纪律（照抄 coords 线程纪律）：本函数只做纯计算，Tk 控件一个手指头
+        都不能碰，UI 操作一律 self.after(0, ...) 抛回主线程。
+        本线程内对 _keycap_pressed / _keycap_count / _keycap_members 的读写
+        是串行的（pynput 单线程派发回调），天然无需加锁。
+        """
+        # ── 第0步：归一化。三级漏斗（name→vk→char）唯一真相源，
+        #    与监听端同链。None = 识别不了：静默忽略（定稿·第二节规则3），
+        #    不写备注、不提示——与执行器对杂音键的态度一致
+        name = normalizeSingleKey(key)
+        if name is None:
+            return
+
+        # ── 第1步：Esc 条件判定（定稿·第二节规则6）──
+        # 手里是空的（没有任何键按着）→ Esc 是终止信号，不留记录；
+        # 手里还压着键（ctrl+esc 这类合法组合正在成型）→ Esc 是普通成员，
+        # 如实记一行 esc。判定依据就是本来就维护着的按下集合，成本可忽略。
+        if name == "esc" and not self._keycap_pressed:
+            self.after(0, self.stop_key_capture)  # 终止：抛回主线程统一收尾
+            return
+        # （手里压着键时故意不 return，让 esc 落入下面的普通记录流程）
+
+        # ── 第2步：长按去重（定稿·第二节规则2）──
+        # 名字已在按下集合 → 这是系统的打字机重复，忽略。
+        # 对外口径："不松开就不插入下一个"，与执行器防重发思想同源（软件特色）。
+        # 无时间窗 → 用户快速连敲两下同键，两次都如实记录（验收6）。
+        # ⚠ 已知取舍（定稿·第八节1）：若某键的 release 被系统吞掉，它会滞留
+        #   集合并压制同名后续录入；影响限单次会话（关窗即重建），不补偿。
+        if name in self._keycap_pressed:
+            return
+        self._keycap_pressed.add(name)
+
+        # ── 第3步：分类记录（定稿·第二节规则4/5）──
+        self._keycap_count += 1
+        if name in LEGAL_KEYS:
+            # 合法域：如实特称记录——ctrl_l 就写 ctrl_l，绝不折叠统称。
+            # 理由：物理忠实还原 + 零新增映射逻辑；执行器智能匹配本就允许
+            # 统称配置匹配特称触发，想写统称的用户手删两个字符即可
+            line = f"按键{self._keycap_count}：{name}"
+            member = name
+        else:
+            # 有名字但不在合法域（多媒体键等）：照样教学、附注不支持，
+            # 但【不进组合串】——组合串是供手抄进快捷键框的，掺非法键无意义
+            line = f"按键{self._keycap_count}：{name}（此键不支持绑定）"
+            member = None
+        if member is not None:
+            self._keycap_members.append(member)
+
+        # ── 第4步：抛回主线程做 UI（逐条实时落盘 + 状态行刷新）──
+        # 值全部按参数携带，主线程不回读监听线程变量，线程边界干净
+        self.after(0, self._insert_keycap_to_desc, line)
+        self.after(0, self._refresh_keycap_status, self._keycap_count, name,
+                   member is not None)
+
+    def _on_keycap_release(self, key):
+        """释放回调：把键从按下集合移除。与 press 配对，长按去重的另一半。
+
+        用 discard 而非 remove：press 阶段可能因归一化失败 / Esc 终止路径
+        没进集合，release 无条件宽容，保持集合与物理状态的最大一致。
+        """
+        name = normalizeSingleKey(key)
+        if name:
+            self._keycap_pressed.discard(name)
+
+    # ---------- 以下三个函数运行在主线程（经 self.after 调度）----------
+
+    def _insert_keycap_to_desc(self, line):
+        """把一行按键记录写进备注（逐条实时落盘，定稿·第四节）。
+
+        换行衔接逻辑与 _insert_coord_to_desc 同款：旧文非空且不以换行结尾
+        时先补一个换行，避免"备注原文按键1"黏成一行。
+        _keycap_active 守卫：收尾后迟到的按键事件直接丢弃，防止记录插到
+        "本次组合"行后面把顺序搞乱。
+        """
+        if not self._keycap_active:
+            return
+        current_text = self.descriptionEntry.get("1.0", "end-1c")
+        if current_text and not current_text.endswith("\n"):
+            self.descriptionEntry.insert("end-1c", "\n")
+        self.descriptionEntry.insert("end-1c", line + "\n")
+
+    def _refresh_keycap_status(self, count, last_name, is_legal):
+        """刷新捕获窗状态行（事件驱动，无轮询——与 coords 的刻意不同②）。"""
+        if not self._keycap_active or not self._keycap_top.winfo_exists():
+            return
+        text = f"已录入 {count} 键｜最近录入：{last_name}"
+        if not is_legal:
+            text += "（不支持绑定）"
+        self._keycap_status.configure(text=text)
+
+    def stop_key_capture(self):
+        """三出口（Esc /「完成」/ ×）统一收尾。防重入 + finally 保证清理必达。
+
+        步骤顺序严格对齐设计定稿·第三节：
+        1. 停本地监听 → 2. 补组合行（有成员才补）→ 3. executor.start() 恢复
+        → 4. 关窗销毁（局部按下集合随会话自然消亡，无需手动清）。
+        """
+        # 防重入：Esc 与「完成」/ × 竞态（手抖连按）只允许收尾一次
+        if not self._keycap_active:
+            return
+        self._keycap_active = False
+        try:
+            # 1. 停本地监听——先断源头，避免收尾期间又冒出新事件
+            if self._keycap_listener:
+                self._keycap_listener.stop()
+                self._keycap_listener = None
+
+            # 2. 补"本次组合"行。判定用 members（合法成员）而非按键行数：
+            #    只录到非法键的会话没有任何可抄的东西，不该留一行空组合。
+            #    winfo_exists 守卫：编辑窗销毁兜底路径走到这里时备注框可能
+            #    已被拆毁（Tk 先子后父），此时写入无意义，跳过直落 finally
+            if self._keycap_members and self.descriptionEntry.winfo_exists():
+                current_text = self.descriptionEntry.get("1.0", "end-1c")
+                if current_text and not current_text.endswith("\n"):
+                    self.descriptionEntry.insert("end-1c", "\n")
+                # 按按下先后拼接（下游解析顺序不敏感，时序纯为阅读自然）
+                combo = "+".join(self._keycap_members)
+                self.descriptionEntry.insert("end-1c", "─" * 18 + "\n")
+                self.descriptionEntry.insert("end-1c", f"本次组合：{combo}\n")
+        finally:
+            # 3. 恢复全局监听——本功能最要命的清理项，漏了软件就哑了。
+            #    放 finally：哪怕第2步抛异常（比如备注框已被销毁）也必须执行，
+            #    这是 coords 那套收尾没有的保险
+            if self.executor:
+                self.executor.start()
+            # 4. 关窗销毁
+            if self._keycap_top and self._keycap_top.winfo_exists():
+                self._keycap_top.destroy()
+
+
+    def _onEditWindowDestroy(self, event):
+        """编辑窗销毁兜底：任何活跃捕获会话就地收尾（场景见 __init__ 加固注释）。
+
+        销毁进行中 descriptionEntry 可能已被拆毁——stop_key_capture 第2步
+        已有 winfo_exists 守卫会跳过写入，finally 保证 executor.start() 必达，
+        行为正确；本方法只负责把会话的清理函数调用起来。
+        """
+        if event.widget is not self:
+            return  # 子控件的销毁事件，不归我管
+        if getattr(self, "_keycap_active", False):
+            self.stop_key_capture()
+        # 坐标捕获同款隐患顺手补漏（不改其内部逻辑，只借销毁时机拉闸）
+        if getattr(self, "capture_listener", None):
+            self.stop_coord_capture()
