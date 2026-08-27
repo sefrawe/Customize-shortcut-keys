@@ -74,5 +74,8 @@ def main():
     finally:
         executor.stop()
 
+
 if __name__ == "__main__":
+    print("启动自定义快捷键工具...");# print("启动自定义快捷键工具...");
+    print("启动自定义快捷键工具...");
     main()

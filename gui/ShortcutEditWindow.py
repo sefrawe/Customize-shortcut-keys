@@ -298,9 +298,17 @@ class ShortcutEditWindow(ctk.CTkToplevel):
 
     def _buildActionGroupUI(self, presetParams: dict | None = None):
         """
-        专门为"动作组"动作构建的特殊 UI (v7 极简版)
-        ==================== 修复Bug2：概览和按钮改为上下结构 ====================
+        专门为"动作组"动作构建的特殊 UI
+
+        布局演变记录：
+        - v7 极简版：概览在上 + 编辑按钮在下（信息展示与编辑分离的第一版）
+        - TODO30a：反转为 「编辑按钮在上 + 概览在下」
+          理由：概览是主要阅读区，放下方能吃满剩余高度，窗口越大看得越多；
+          编辑按钮属于低频入口，一行常驻顶部即可，不该挤占阅读区。
+          本次仅调换两个组件的 grid 行号和对应权重，样式零改动。
+
         ==================== 修复布局：拉满父组件宽度 ====================
+        （这段列权重修复沿用 v7 版，与新布局无关，保留防回归）
         """
         if not isinstance(presetParams, dict):
             presetParams = {}
@@ -312,32 +320,47 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         presetParams.setdefault("confirmAllAtOnce", False)
         self._actionGroupData = presetParams
 
-        # 清空旧控件
+        # 清空旧控件（切换动作类型回来时可能已有遗留）
         for widget in self.paramsFrame.winfo_children():
             widget.destroy()
 
-        # ★ 固定 row=5
+        # ★ 固定 row=5（与常规动作参数区/hint 框的行位规划一致，勿动）
         self.paramsFrame.grid(row=5, column=0, sticky="nsew", padx=10, pady=5)
 
         # ==================== 修复布局：确保列权重正确传递 ====================
-        # 原来可能因为常规动作遗留了 grid_columnconfigure(1, weight=1)
-        # 导致 contentFrame 在 column=0 无法拉满，这里强制把权重给到 column=0
+        # 常规动作分支遗留了 grid_columnconfigure(1, weight=1)，
+        # 若不清回来，本容器在 column=0 会无法横向拉满。
         self.paramsFrame.grid_columnconfigure(0, weight=1)
         self.paramsFrame.grid_columnconfigure(1, weight=0)
-        # =================================================================
+        # =====================================================================
+
+        # paramsFrame 自身只有这一行内容，纵向拉伸权全部交给它
         self.paramsFrame.grid_rowconfigure(0, weight=1)
 
         contentFrame = ctk.CTkFrame(self.paramsFrame, fg_color="transparent")
         contentFrame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         contentFrame.grid_columnconfigure(0, weight=1)
 
-        # ==================== 修复Bug2：上下结构布局 ====================
-        # row=0 放概览文本框，weight=1 让它占据大部分空间
-        contentFrame.grid_rowconfigure(0, weight=1)
-        # row=1 放编辑按钮，weight=0 固定高度
-        contentFrame.grid_rowconfigure(1, weight=0)
+        # ==================== TODO30a：上下结构反转 ====================
+        # row=0 编辑按钮区：weight=0 固定高度，常驻顶部不被挤压
+        contentFrame.grid_rowconfigure(0, weight=0)
+        # row=1 概览文本框：weight=1 吃掉剩余全部高度
+        contentFrame.grid_rowconfigure(1, weight=1)
 
-        # 上方：只读概览文本框
+        # 上方：编辑按钮（左对齐，样式与交换前完全一致）
+        editBtnFrame = ctk.CTkFrame(contentFrame, fg_color="transparent")
+        # sticky="ew" 让容器横向拉满；底部留 5px 与概览区呼吸间隔
+        editBtnFrame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
+        editBtnFrame.grid_columnconfigure(0, weight=1)  # 内部列可伸缩
+        ctk.CTkButton(
+            editBtnFrame,
+            text="⚙ 编辑动作组步骤",
+            command=self.openActionGroupEditor,
+            font=("微软雅黑", 14),
+            height=30
+        ).pack(side="left", padx=5)
+
+        # 下方：只读概览文本框
         self.stepSummaryTextbox = ctk.CTkTextbox(
             contentFrame,
             height=500,
@@ -346,23 +369,8 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             state="disabled",
             fg_color="transparent"
         )
-        # 使用 sticky="nsew" 确保文本框在四个方向上都填满分配的空间
-        self.stepSummaryTextbox.grid(row=0, column=0, sticky="nsew", padx=5, pady=(5, 5))
-
-        # 下方：编辑按钮（左对齐）
-        editBtnFrame = ctk.CTkFrame(contentFrame, fg_color="transparent")
-        # 使用 sticky="ew" 让按钮容器横向拉满，虽然按钮是左对齐的，但容器本身要撑开
-        editBtnFrame.grid(row=1, column=0, sticky="ew", pady=(0, 5))
-        editBtnFrame.grid_columnconfigure(0, weight=1)  # 让内部列可伸缩
-
-        ctk.CTkButton(
-            editBtnFrame,
-            text="⚙ 编辑动作组步骤",
-            command=self.openActionGroupEditor,
-            font=("微软雅黑", 14),
-            height=30
-        ).pack(side="left", padx=5)
-        # =================================================================
+        # sticky="nsew" 四向填满分配的格子；间距与上方按钮区呼应
+        self.stepSummaryTextbox.grid(row=1, column=0, sticky="nsew", padx=5, pady=(0, 5))
 
         self._updateStepSummary()
 

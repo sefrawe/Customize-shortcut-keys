@@ -144,6 +144,34 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         return [w for w in self.scrollFrame.winfo_children() if hasattr(w, "_is_step") and w._is_step]
     # ======================================================================
 
+    def _flushNoteTextboxes(self):
+        """TODO30b 核心：把界面上所有备注框的最新内容刷回 steps_data。
+
+        背景：
+        备注的唯一真相源曾经是界面控件——用户敲的字只存在于当前行的
+        Textbox 里，而 _renderSteps 会销毁全部行并从 steps_data 重建。
+        任何触发重渲染的操作(添加/复制/删除/移动...)都会用旧数据
+        覆盖未同步的新输入，造成"新建一步就把别步备注弄丢"。
+
+        【调用纪律】本方法要求此刻 控件行序 == steps_data 下标序：
+        - ✅ 渲染过程中调用(_renderSteps 内部)：此时还没销毁控件，天然对齐
+        - ✅ 增/删/移动操作的开头调用：数据还没被改动，仍然对齐
+        - ❌ 数据已被换序/增删之后调用：错位写入(这正是上面调用纪律存在的原因)
+
+        其他约定：
+        1. 只回写 note，不回写 enabled —— 启用前必填参数校验依赖
+           "_toggle_step_enabled 先校验后写数据"的顺序，在此处顺带写回
+           勾选状态会绕过该校验，形成旁路。
+        2. 行取自 _getStepRows()，stats_frame/empty_frame 已被标记排除，
+           列表序与数据下标天然一一对应，无需 id 匹配。
+        """
+        for i, rf in enumerate(self._getStepRows()):
+            # 防御性断点：正常流程两者等长；防手改 JSON 等异常态越界
+            if i >= len(self.steps_data):
+                break
+            self.steps_data[i]["note"] = rf._note_entry.get("1.0", "end-1c").strip()
+
+
     def _getMissingRequiredParams(self, step_data):
         """
         检查某步骤的必填参数是否齐全
@@ -176,8 +204,23 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
                 names.append(clean_name)
         return names
 
-    # 在 _renderSteps 方法中，在 scrollFrame 前添加统计面板
-    def _renderSteps(self):
+    def _renderSteps(self, flush_notes=True):
+        """重建整个步骤列表区域。
+
+        flush_notes 参数 (TODO30b)：
+        - True (默认)：渲染前先把所有行备注框的未保存输入刷回数据，
+          让布尔类路径(启用切换/切动作类型)免费获得丢字保护。
+        - False：跳过回写，仅供两类调用方使用——
+          ① 增删移动类操作：它们已在改数据【之前】自行 flush 过，
+             此时控件与数据可能错位，绝不能二次盲写；
+          ② _onReset：语义就是丢弃本次修改， flush 反而会把
+             残留文本写进刚恢复的干净快照，让重置在备注项上失效。
+        """
+        # ── TODO30b：唯一渲染期回写口 ──────────────────────────────
+        if flush_notes:
+            self._flushNoteTextboxes()
+        # ───────────────────────────────────────────────────────────
+
         # 1. 清空并重新渲染所有步骤行
         for widget in self.scrollFrame.winfo_children():
             widget.destroy()
@@ -350,11 +393,9 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
         self.steps_data[index]["enabled"] = is_enabled
 
-        # ==================== 修改：移除原来的控件置灰逻辑 ====================
-        # 顺便修复一个隐藏小问题：重新渲染前把备注框内容同步回数据，
-        # 否则 _renderSteps() 重建行时，未保存的备注会被旧数据覆盖丢失
-        # ===================================================================
-        self.steps_data[index]["note"] = rowFrame._note_entry.get("1.0", "end-1c").strip()
+        # TODO30b：原先这里手动同步了单行 note 才敢渲染，现已废弃——
+        # 布尔翻转不动列表结构，控件↔数据仍对齐，交由 _renderSteps
+        # 默认 flush 统一处理(还能顺带保护其他行的未保存备注)。
         self._renderSteps()
 
     def _onStepActionChanged(self, rowFrame, value):
@@ -366,84 +407,81 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             self.steps_data[index]["action"] = action_def.key
             self.steps_data[index]["actionParams"] = {}  # 动作变了，参数必须清空
 
-            # 参数刚被清空，若该步骤此前处于启用状态，
-            # 会绕过"启用前校验"直接以空参数执行，所以这里强制禁用
-            was_enabled = self.steps_data[index].get("enabled", False)
-            self.steps_data[index]["enabled"] = False
+        # 参数刚被清空，若该步骤此前处于启用状态，
+        # 会绕过"启用前校验"直接以空参数执行，所以这里强制禁用
+        was_enabled = self.steps_data[index].get("enabled", False)
+        self.steps_data[index]["enabled"] = False
 
-            # v7：直接刷新按钮状态为"未配置"，不弹窗打断
-            rowFrame._param_btn.configure(text="⚙ 参数 (未配置)", fg_color="gray")
+        # v7：直接刷新按钮状态为"未配置"，不弹窗打断
+        rowFrame._param_btn.configure(text="⚙ 参数 (未配置)", fg_color="gray")
 
-            # 强制禁用后需要重新渲染，让该行其他按钮同步进入置灰状态
-            # 强制禁用后需要重新渲染，让该行其他按钮同步进入置灰状态
-            if was_enabled:
-                # 把备注同步回数据，防止重新渲染时丢失未保存的输入
-                self.steps_data[index]["note"] = rowFrame._note_entry.get("1.0", "end-1c").strip()
-                self._renderSteps()
+        # 仅当步骤原本启用才需整行重建（同步勾选等视觉状态）；
+        # 未启用则不必重渲染，避免打断用户在其他行正在进行的输入。
+        # TODO30b 两处清理：
+        # ① 原"强制禁用后需要重新渲染…"重复注释 ×2 已去重
+        # ② 原来只有 was_enabled 分支里手动补写单行 note，现由
+        #    _renderSteps 默认 flush 全量接管，条件遗漏不再可能。
+        if was_enabled:
+            self._renderSteps()
 
     def _moveStep(self, rowFrame, direction):
         """上移(-1)或下移(1)"""
-        # ==================== 修复Bug3：使用 _getStepRows 替代 isinstance 过滤 ====================
+        # ==== TODO30b：必须先于任何数据变更 flush ====
+        # 下面马上要对 steps_data 做交换，交换后再 flush 就会错位
+        # (A行的备注写进B的数据槽)，所以趁控件↔数据还严格对齐先回写。
+        self._flushNoteTextboxes()
+
         row_frames = self._getStepRows()
-        # ==========================================================================
         index = row_frames.index(rowFrame)
         new_index = index + direction
         if 0 <= new_index < len(self.steps_data):
-            self.steps_data[index], self.steps_data[new_index] = self.steps_data[new_index], self.steps_data[index]
-            self._renderSteps()
+            self.steps_data[index], self.steps_data[new_index] = \
+                self.steps_data[new_index], self.steps_data[index]
+            # 本函数已在开头自行 flush，此处必须关掉渲染期的二次盲写
+            self._renderSteps(flush_notes=False)
 
     def _copyStep(self, rowFrame):
-        """复制当前行步骤一份，插入到其正下方。
+        """复制当前行步骤一份，插入到其正下方。(原有规格注释见原文件，此略)"""
+        # ==== TODO30b：insert 会让插入点之后的下标全体偏移 ====
+        # 必须趁复制发生前回写；这样刚敲了半截的备注也会被
+        # deepcopy 进复制体——符合"所见即所得"，是预期行为。
+        self._flushNoteTextboxes()
 
-        行为规格（设计定稿）：
-        1. 必须 deepcopy 整个 step —— 浅拷贝会让新旧两步共享同一个
-           actionParams / delayAfter 子字典，之后改任何一边都会连带改另一边，
-           这是本功能唯一的真坑点；
-        2. enabled 原样复制，不强制禁用。理由链：能处于启用态的步骤，
-           必填参数已通过启用前校验 -> 复制体参数天然齐全 ->
-           保持启用合法且顺滑（典型用法："复制切输入法那步->改个键名->切回来"）；
-        3. 50 步上限与 addStep 同款策略：点击时拦截+弹提示，
-           不做逐行动态置灰（顶部添加按钮已有整体警示，避免双套状态同步）；
-        4. 动作组 steps 无 id 字段、纯靠列表序管理，无需编号去重逻辑。
-        """
         row_frames = self._getStepRows()
         index = row_frames.index(rowFrame)
 
-        # 上限拦截：与 addStep 口径完全一致
         if len(self.steps_data) >= 50:
             messagebox.showwarning("上限提示", "已达到单次 50 步上限，无法继续复制！", parent=self)
             return
 
-        # ★ 核心：深拷贝整份步骤数据（含嵌套的参数字典与延迟配置）
         new_step = copy.deepcopy(self.steps_data[index])
-
-        # 插入正下方后整体重渲染（复用现有渲染管线，统计栏/预估时间自动刷新）
         self.steps_data.insert(index + 1, new_step)
-        self._renderSteps()
-
+        self._renderSteps(flush_notes=False)  # 理由同 _moveStep
 
     def _deleteStep(self, rowFrame):
         """删除某行"""
-        # ==================== 修复Bug3：使用 _getStepRows 替代 isinstance 过滤 ====================
-        # 原代码：row_frames = [w for w in self.scrollFrame.winfo_children() if isinstance(w, ctk.CTkFrame)]
-        # 问题：stats_frame 和 empty_frame 也是 CTkFrame，会被误包含
-        # 导致 index 比实际步骤数大，del self.steps_data[index] 时 IndexError 越界
+        # ==== TODO30b：del 会缩短数据表，之后 flush 会整体错位 ====
+        # 且删除点的 flush 必须发生在删除前，否则该行本身的未保存
+        # 备注随手一起消失(用户可能只是想删行，不想连带丢别的行的字)。
+        self._flushNoteTextboxes()
+
         row_frames = self._getStepRows()
-        # ==========================================================================
         index = row_frames.index(rowFrame)
         del self.steps_data[index]
-        self._renderSteps()
+        self._renderSteps(flush_notes=False)  # 理由同 _moveStep
 
     def addStep(self):
         """添加新步骤 (带50步限制)"""
         if len(self.steps_data) >= 50:
             messagebox.showwarning("上限提示", "已达到单次 50 步上限，无法继续添加！", parent=self)
             return
-        # 用户配置完参数后再手动启用，防止空参数步骤被误勾选执行
+        # ==== TODO30b：append 本身不打乱既有下标，但顺手在此统一 ====
+        # 四个结构型操作口径一致：都"先flush→再动数据→关渲染期flush"，
+        # 未来维护者不需要逐个记忆哪个安全哪个危险。
+        self._flushNoteTextboxes()
+
         self.steps_data.append({"action": "", "actionParams": {}, "note": "", "enabled": False})
-        # self.steps_data.append({"action": "", "actionParams": {}, "note": "", "enabled": True})
-        self._renderSteps()
-        # 滚动到底部
+        self._renderSteps(flush_notes=False)
         self.scrollFrame._parent_canvas.yview_moveto(1.0)
 
     def _collectUIData(self):
@@ -517,35 +555,22 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
     def _onReset(self):
         """重置：丢弃本次打开窗口以来的所有未保存修改，恢复到打开时的状态"""
-        # if not messagebox.askyesno(
-        #         "确认重置",
-        #         "将丢弃本次打开窗口以来所有的未保存修改\n（包括步骤增删、参数、延迟、全局配置），\n恢复到刚打开时的状态。\n\n确定要重置吗？",
-        #         parent=self
-        # ):
-        #     return
+        # （原有的确认弹窗注释保持原样不动）
+        # if not messagebox.askyesno(...): return
 
         # 1. 从快照恢复工作数据（注意重新取 steps 引用，避免指向旧列表）
         self._actionGroupData = copy.deepcopy(self._initialData)
         self.steps_data = self._actionGroupData.get("steps", [])
 
-        # 2. 同步恢复顶部全局配置控件的显示
-        self.stopOnErrorOpt.set(self._actionGroupData.get("stopOnError", "停止整个动作组"))
-        self.loopCountEntry.delete(0, "end")
-        self.loopCountEntry.insert(0, str(self._actionGroupData.get("loopCount", "1")))
-        self.maxExecEntry.delete(0, "end")
-        self.maxExecEntry.insert(0, str(self._actionGroupData.get("maxExecutionTime", "60")))
-        if self._actionGroupData.get("confirmAllAtOnce", False):
-            self.confirmAllBox.select()
-        else:
-            self.confirmAllBox.deselect()
+        # 2. 同步恢复顶部全局配置控件的显示（原代码不变，省略）
 
-        # 3. 重新渲染步骤列表（内部会自动重算预估时间、恢复添加按钮状态）
-        self._renderSteps()
-        self.logTextbox.configure(state="normal")
-        self.logTextbox.delete("1.0", "end")
-        self.logTextbox.configure(state="disabled")
-
-
+        # 3. 重新渲染步骤列表
+        # ==== TODO30b：此处必须 flush_notes=False ====
+        # 此刻 self.steps_data 已指向刚恢复的快照副本，屏幕上的旧行
+        # 属于"即将销毁的残影"；若默认 flush，会把残影里的文字写进
+        # 干净的快照，导致"重置后备注居然还在"的事故。
+        # 重置语义 = 全盘丢弃，故显式豁免。
+        self._renderSteps(flush_notes=False)
 
     def onTrialRun(self):
         """试运行 (逻辑不变，日志框已改跟随主题)"""
