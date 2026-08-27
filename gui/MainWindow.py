@@ -153,12 +153,14 @@ class MainWindow(ctk.CTk):
         )
         self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
 
-
-        # 新增：向执行器注入跨线程确认弹窗回调
+        # 新增：向执行器注入跨线程回调 —— 注意三行必须在同一个守卫块内，
+        # 漏掉任何一个都会造成该通道静默降级（本项目已经踩过一次坑）
         if self.executor:
             self.executor.setConfirmCallback(self.show_confirm_dialog)
-            # 注入操作软件自身的回调
             self.executor.setAppControlCallback(self._app_control_callback)
+            # ★ Bug 修复：此前一直缺失的 tip 注入。生效后所有依赖 showTip 的
+            #   错误路径（含新的动作组执行报告）从 print 虚空变为真正可见。
+            self.executor.setTipCallback(self.showExecutorTip)
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):

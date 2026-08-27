@@ -408,13 +408,24 @@ class Executor:
                 return
 
             try:
-                # 构建 context 并传递给 handler，新增 appControlCallback
+                # 构建 context 并传递给 handler
+                # ==================== 新增两个键（报告机制配套）====================
+                # ① shortcut_name：报告标题需要"这份报告是谁的"。shortcut 名是
+                #   局部变量本来就有，透传下去几乎零成本；若空则 actionHandlers
+                #   会自动降级为"未命名快捷键"占位。
+                # ② tip_callback：执行结束后的汇总弹窗通道。它本身已被主窗口按
+                #   "self.after(0, ...)" 的跨线程安全范式包装好了（见
+                #   MainWindow.showExecutorTip），直接挂进来就能跨线程使用，
+                #   与本文件既有的 confirm_callback 是同一套协作约定。
+                # ================================================================
                 context = {
                     "confirm_callback": self.confirmCallback,
                     "app_control_callback": self.appControlCallback,
+                    "tip_callback": self.tipCallback,
+                    "shortcut_name": shortcutName,
                     "interrupt_event": self.action_group_interrupt_event if is_action_group else None,
                     # 只有动作组才需要传入软停止事件，普通动作传 None
-                    "soft_stop_event": self.action_group_soft_stop_event if is_action_group else None
+                    "soft_stop_event": self.action_group_soft_stop_event if is_action_group else None,
                 }
                 actionDef.handler(actionParams, context)
             except Exception as e:

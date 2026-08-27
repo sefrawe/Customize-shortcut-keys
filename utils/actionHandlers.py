@@ -750,6 +750,25 @@ def doActionGroup(params: dict, context: dict | None = None):
     # 开始阻塞执行(此方法在 Executor 的子线程中运行)
     player.play()
 
+    # ==================== 新增：收尾阶段的一次性汇总弹窗 ====================
+    # 时序安全性：本行位于 play() 完全返回之后 —— 所有模拟按键与休眠分片已结束，
+    # 弹窗不会抢焦点污染任何组合键；同时 doActionGroup 尚未返回，is_busy 仍为
+    # True，用户读完报告前无法从托盘搅乱执行器状态。
+    #
+    # 不做成阻塞等待：不复用 confirm 的 event.wait 范式，否则子线程会被关弹窗
+    # 动作拖住，连带 finally 里的 isExecuting 复位和按键清理一起延后。
+    # tip_callback 走 after 队列，fire-and-forget 即可。
+    #
+    # 不需要判断试运行：本 handler 只经 executor 正式路径调用；试运行是编辑器
+    # 自建 Player 直调，根本不经过这里，此处的 log_callback 恒为 None。
+    summary = player.getFormattedReport()
+    if summary:
+        tip_cb = (context or {}).get("tip_callback")
+        if tip_cb:
+            origin_name = (context or {}).get("shortcut_name") or "未命名快捷键"
+            tip_cb(f"动作组执行报告：{origin_name}", summary)
+    # =====================================================================
+
 
 # ==================== 注册 ====================
 def initActionHandlers():
