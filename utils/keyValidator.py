@@ -1,12 +1,21 @@
 ''' 通用数据校验相关工具 '''
 
+# ==================== 31/33 号新增：保留组合检查接线 ====================
+# 校验器是【唯一的拦截面兼教学面】，保留组合检查必须长在这里而不是
+# 调用方各写一份 —— 这样 UI 保存（ShortcutEditWindow.onSave）与
+# 动作组运行时校验（actionHandlers.doSimulateKeys）两个调用方自动
+# 同时获得防护：动作组自己也无法模拟出停止组合，杜绝回声误触。
+# 通配感知语义详见 utils/reservedCombos.py 模块头注释。
+from utils.reservedCombos import checkReservedConflict
+
 # ==================== 校验规则常量定义 ====================
+
 # 合法按键字典（全部小写）。命名唯一口径：见下分区块注释。
 LEGAL_KEYS = {
     # ── 修饰键及左右变体（统称/特称两级，等价拼写靠校验前的小写化兜住）──
     "ctrl", "ctrl_l", "ctrl_r", "control", "control_l", "control_r",
-    "shift", "shift_l", "shift_r", "alt", "alt_l", "alt_r",
-    "option", "option_l", "option_r",
+    "shift", "shift_l", "shift_r",
+    "alt", "alt_l", "alt_r", "option", "option_l", "option_r",
     "cmd", "cmd_l", "cmd_r", "windows", "command",
 
     # ── 字母 a-z ──
@@ -31,29 +40,33 @@ LEGAL_KEYS = {
     "space", "tab", "enter", "esc",
     "up", "down", "left", "right",
     "page_up", "page_down", "caps_lock", "insert", "print_screen",
-
     "backspace", "delete", "home", "end",
 
     # ── OEM 标点行 11 键：一律写美式布局底位符，与 vkKeyMap 收录一致；
-    #    上档效果（加号/@/#...）由用户补一个 shift 成员表达 ──
+    # 上档效果（加号/@/#...）由用户补一个 shift 成员表达 ──
     ";", "=", ",", "-", ".", "/", "`", "[", "\\", "]", "'",
 }
+
 # 显式不收录（防止未来有人好心回加，先刻碑）：
-#   · "plus" 与 "+" ：'+' 是分隔符本身无法成为键名，且未发布无兼容包袱，
-#     加号效果请写 shift+=（决策5：不告诉用户存在过 plus 这种设计）
-#   · 上档字符 "@#$%..." ：不是键名，让校验器报错并教学才是正道
+# · "plus" 与 "+" ：'+' 是分隔符本身无法成为键名，且未发布无兼容包袱，
+#   加号效果请写 shift+=（决策5：不告诉用户存在过 plus 这种设计）
+# · 上档字符 "@#$%..." ：不是键名，让校验器报错并教学才是正道
+
 
 # ==================== 通用校验函数 ====================
+
 def validate_key_combination(key_str: str):
     """校验快捷键组合字符串是否合法（不强制结构，只要键名合法即可）。
 
     返回: (is_valid, message, cleaned_data)
-        cleaned_data 为清理后标准串（去首尾空白、统一小写）
+          cleaned_data 为清理后标准串（去首尾空白、统一小写）
 
     定位：【唯一的拦截面兼教学面】
-      - 组合内出现非法键名在这里报错并给出"怎么写才对"；
-      - 因此 executor 与 actionHandlers 两侧对输入保持零宽容直通，
-        三方（校验/监听/发送）都以本函数放行为共同信任前提。
+    - 组合内出现非法键名在这里报错并给出"怎么写才对"；
+    - 组合恰好是（或在统称语义下可解析成）软件级停止组合的，在这里
+      拒绝并教学（31/33 号新增，见下方保留组合检查块）；
+    - 因此 executor 与 actionHandlers 两侧对输入保持零宽容直通，
+      三方（校验/监听/发送）都以本函数放行为共同信任前提。
     """
     if not key_str or not key_str.strip():
         return False, "快捷键不能为空。", key_str
@@ -86,7 +99,7 @@ def validate_key_combination(key_str: str):
                 # 教学点②：单字符多半是想写上档符号（@ # & ...）
                 tips.append(
                     "[{}] 不是合法键名。标点键只认美式底位符号 11 个："
-                    "; = , - . / ` [ \\ ] ' ，需要上档效果时补一个 shift 成员"
+                    "; = , - . / ` [ \\\\ ] ' ，需要上档效果时补一个 shift 成员"
                     "（例如 @ 所在按键写作 shift+2）".format(name)
                 )
             else:
@@ -94,13 +107,33 @@ def validate_key_combination(key_str: str):
                 tips.append("[{}] 未知的按键名称".format(name))
         return False, "按键名校验失败：\n· " + "\n· ".join(tips), cleaned_key
 
+    # ──────────── 31/33 号新增：保留组合检查（防君子层）────────────
+    # 走到这里说明格式与键名都合法，再判断它是否恰好是（或在统称/别名
+    # 语义下可解析成）软件级停止组合 —— 是则拒绝：停止路由在所有用户
+    # 快捷键之前，这类配置即使保存成功也永远不会触发（运行时豁免层
+    # 会永久截胡）。通配感知的原因：统称 ctrl+alt+esc 会被物理特称
+    # 按键（左Ctrl+左Alt+esc）借道 _is_key_match 命中，属于隐形失效，
+    # 必须在这层让它现形。
+    #
+    # 为什么放在键名检查之后：格式/拼写错误的教学价值更基础，先修好
+    # 写法再看是否撞保留组合，反馈顺序对用户更友好。
+    #
+    # 为什么返回 False 而不是静默改写：静默改写等于篡改用户配置
+    # （Bug#30 同款禁忌）。编辑窗调用方有"强制保存"逃生口，本层定位
+    # 是劝导；运行时豁免层（executor 路由永久截胡）才是权威防线。
+    is_reserved, reserved_msg, _matched = checkReservedConflict(parts)
+    if is_reserved:
+        return False, reserved_msg, cleaned_key
+    # ──────────────────────────────────────────────────────────────
+
     # 拼接回标准格式（此时各段均合法且不含空白，直接 join 即得规范形）
     final_key = "+".join(parts)
     return True, "校验通过", final_key
 
+
 # ==================== 以后扩展的校验函数写在这里 ====================
 # 例如：
 # def validate_path(path_str: str):
-#     ...
+# ...
 # def validate_command(command_str: str):
-#     ...
+# ...

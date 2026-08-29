@@ -17,8 +17,17 @@ from utils.systemUtils import set_auto_start, is_auto_start_enabled
 
 
 class SettingsPage(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
+    def __init__(self, master, main_window=None, **kwargs):
         super().__init__(master, **kwargs)
+        # ==================== 32 号新增：主窗口引用注入 ====================
+        # MainWindow 创建本页时传入自身，供"软件控制与状态"区调用其控制方法
+        # （暂停/恢复监听、强制/平滑停止、退出）并读取监听暂停标志。
+        # 默认 None 保持向后兼容：未传引用的调用点页面照常渲染，控制区降级
+        # 为只读提示（见 _refreshControlStatus 的降级分支）。
+        self.main_window = main_window
+        # 轮询定时器 ID 占位（destroy 时取消）
+        self._poll_after_id = None
+        # ================================================================
 
         # ── 页面整体布局：单个滚动容器撑满 ──
         self.grid_columnconfigure(0, weight=1)
@@ -26,6 +35,53 @@ class SettingsPage(ctk.CTkFrame):
 
         self.scrollFrame = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.scrollFrame.grid(row=0, column=0, sticky="nsew")
+
+        # ==================== 32 号新增：软件控制与状态区 ====================
+        # 设计定稿第三节：设置页最顶部（点进设置第一眼即达）。
+        # 定位：观察窗口 + 鼠标可用时的备用控制通道 —— 主通道是键盘停止组合，
+        # 备用通道是托盘；鼠标被动作组劫持时本区同样点不到，这是模型边界。
+        ctk.CTkLabel(self.scrollFrame, text="软件控制与状态", font=("微软雅黑", 24)).pack(pady=(20, 10))
+
+        controlCard = ctk.CTkFrame(self.scrollFrame, corner_radius=10)
+        controlCard.pack(pady=(0, 10), padx=20, fill="x")
+
+        # --- 状态行 1：监听状态（只读）---
+        listenRow = ctk.CTkFrame(controlCard, fg_color="transparent")
+        listenRow.pack(fill="x", padx=10, pady=(10, 2))
+        ctk.CTkLabel(listenRow, text="监听状态:", font=("微软雅黑", 14)).pack(side="left")
+        self.listenStateLabel = ctk.CTkLabel(listenRow, text="读取中...", font=("微软雅黑", 14, "bold"))
+        self.listenStateLabel.pack(side="left", padx=8)
+
+        # --- 状态行 2：执行状态（只读）---
+        execRow = ctk.CTkFrame(controlCard, fg_color="transparent")
+        execRow.pack(fill="x", padx=10, pady=(2, 8))
+        ctk.CTkLabel(execRow, text="执行状态:", font=("微软雅黑", 14)).pack(side="left")
+        self.execStateLabel = ctk.CTkLabel(execRow, text="读取中...", font=("微软雅黑", 14, "bold"))
+        self.execStateLabel.pack(side="left", padx=8)
+
+        # --- 按钮行 ---
+        # 忙碌置灰口径（设计定稿第三节）：暂停/恢复监听、退出软件 → 动作组
+        # 执行中禁用；两个停止按钮 → 常启用（空闲时点击得到"没有正在执行的
+        # 动作组"提示，与托盘同口径）。轮询置灰存在 ≤500ms 窗口，方法层守卫
+        # （MainWindow 三个方法）兜底，双保险。
+        btnRow = ctk.CTkFrame(controlCard, fg_color="transparent")
+        btnRow.pack(fill="x", padx=10, pady=(0, 10))
+        self.toggleListenBtn = ctk.CTkButton(btnRow, text="暂停监听", width=110,
+                                             font=("微软雅黑", 13), command=self._onToggleListen)
+        self.toggleListenBtn.pack(side="left", padx=5)
+        self.forceStopBtn = ctk.CTkButton(btnRow, text="⏹ 强制停止（ctrl_r+alt_r+esc）", width=110,
+                                          font=("微软雅黑", 13), fg_color="#A30000",
+                                          hover_color="#7A0000", command=self._onForceStop)
+        self.forceStopBtn.pack(side="left", padx=5)
+        self.softStopBtn = ctk.CTkButton(btnRow, text="⏸ 平滑停止（ctrl_l+alt_l+esc）", width=110,
+                                         font=("微软雅黑", 13), command=self._onSoftStop)
+        self.softStopBtn.pack(side="left", padx=5)
+        self.quitBtn = ctk.CTkButton(btnRow, text="退出软件", width=110,
+                                     font=("微软雅黑", 13), fg_color="#A30000",
+                                     hover_color="#7A0000", command=self._onQuit)
+        self.quitBtn.pack(side="left", padx=5)
+        # ==================================================================
+
 
         # ==================== 主题设置 ====================
         self.themeLabel = ctk.CTkLabel(self.scrollFrame, text="主题设置", font=("微软雅黑", 24))
@@ -252,6 +308,123 @@ class SettingsPage(ctk.CTkFrame):
 
         # 加载已保存的用户黑名单数据到文本框
         self._loadCustomBlacklist()
+
+        # ==================== 32 号新增：启动状态轮询 ====================
+        # 每 500ms 轮询（设计定稿：500ms~1s）。轮询而非事件推送：监听暂停
+        # 标志/执行状态在托盘、GUI、动作组三个入口都可能变化，轮询天然
+        # 覆盖全部通道（如托盘暂停后本区文案自动跟随）。
+        self._startControlPolling()
+
+    # ==================== 32 号新增：软件控制与状态区方法 ====================
+
+    def _startControlPolling(self):
+        """启动控制区状态轮询。"""
+        self._poll_after_id = self.after(500, self._pollControlStatus)
+
+    def _pollControlStatus(self):
+        """轮询回调：刷新状态，再排下一拍。窗口销毁后防御性退出。"""
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        # 页面被 grid_forget（未显示）时跳过刷新工作，只续下一拍 ——
+        # 页面对象常驻内存，不显示时没必要每 500ms 空刷控件
+        if self.winfo_ismapped():
+            self._refreshControlStatus()
+        self._poll_after_id = self.after(500, self._pollControlStatus)
+
+    def _getExecutor(self):
+        """取主窗口持有的执行器（未注入主窗口引用时返回 None）。"""
+        if self.main_window is None:
+            return None
+        return getattr(self.main_window, "executor", None)
+
+    def _refreshControlStatus(self):
+        """根据 executor / 主窗口标志刷新状态标签与按钮可用性。"""
+        mw = self.main_window
+        executor = self._getExecutor()
+
+        # ── 降级分支：未注入主窗口引用（旧调用点 / 测试环境）──
+        if mw is None:
+            self.listenStateLabel.configure(text="（未注入主窗口引用）", text_color="gray")
+            self.execStateLabel.configure(text="未知", text_color="gray")
+            for btn in (self.toggleListenBtn, self.forceStopBtn, self.softStopBtn, self.quitBtn):
+                btn.configure(state="disabled")
+            return
+
+        # ── 监听状态：暂停标志为主，辅以 executor.isListening 与方案名 ──
+        paused = bool(getattr(mw, "is_listening_paused", False))
+        listening = bool(executor is not None and executor.isListening)
+        if paused:
+            listen_text, listen_color = "已暂停（可用下方按钮恢复）", "#FFA500"
+        elif listening:
+            scheme = executor.getActiveSchemeInfo() if executor else None
+            name = (scheme or {}).get("name")
+            if name:
+                listen_text, listen_color = f"监听中 · 方案: {name}", "#008000"
+            else:
+                listen_text, listen_color = "监听中（无启用方案）", "#FFA500"
+        else:
+            listen_text, listen_color = "未启动（无启用方案）", "gray"
+        self.listenStateLabel.configure(text=listen_text, text_color=listen_color)
+
+        # ── 执行状态：is_busy（动作组）优先，isExecuting（单动作长尾）次之 ──
+        busy = bool(executor is not None and executor.is_busy)
+        executing = bool(executor is not None and executor.isExecuting)
+        if busy:
+            exec_text, exec_color = "动作组执行中（可用停止组合 / 本区按钮停止）", "#FF6B6B"
+        elif executing:
+            exec_text, exec_color = "单动作执行中", "#FFA500"
+        else:
+            exec_text, exec_color = "空闲", "gray"
+        self.execStateLabel.configure(text=exec_text, text_color=exec_color)
+
+        # ── 按钮可用性（口径见按钮行注释）──
+        self.toggleListenBtn.configure(
+            text="恢复监听" if paused else "暂停监听",
+            state="disabled" if busy else "normal",
+        )
+        self.quitBtn.configure(state="disabled" if busy else "normal")
+        # 两个停止按钮常启用，不做 configure
+
+    def _onToggleListen(self):
+        """暂停/恢复监听 → 主窗口方法（方法层自带忙碌守卫，双保险）。"""
+        if self.main_window is None:
+            return
+        self.main_window.toggle_listening_status()
+        self._refreshControlStatus()  # 立即刷新一次，不等下一拍
+
+    def _onForceStop(self):
+        if self.main_window is None:
+            return
+        self.main_window.force_stop_action_group()
+
+    def _onSoftStop(self):
+        if self.main_window is None:
+            return
+        self.main_window.soft_stop_action_group()  # 重复发送提示已内置
+
+    def _onQuit(self):
+        if self.main_window is None:
+            return
+        self.main_window.quit_app()  # 忙碌守卫在 quit_app 内
+
+    def destroy(self):
+        """页面销毁时取消状态轮询（32 号设计定稿要求）。
+
+        不取消的话：最后一次排期的 after 回调会在控件销毁后触发，
+        winfo_exists 虽能防御，但显式取消更干净（不依赖防御）。
+        """
+        if getattr(self, "_poll_after_id", None) is not None:
+            try:
+                self.after_cancel(self._poll_after_id)
+            except Exception:
+                pass
+            self._poll_after_id = None
+        super().destroy()
+    # =======================================================================
+
 
     def _populateForcedBlacklist(self):
         """

@@ -131,7 +131,10 @@ class MainWindow(ctk.CTk):
         self.pages = {}
         self.pages["首页"] = HomePage(self.contentFrame, fg_color="transparent" )
         # 创建一个首页对象，并存储在self.pages字典中，键为"首页"，值为HomePage对象。第一个参数self.contentFrame表示将页面放置在内容区父容器中，第二个参数fg_color="transparent"表示设置页面背景颜色为透明。
-        self.pages["设置"] = SettingsPage(self.contentFrame, fg_color="transparent",)
+        # ==================== 32 号新增：注入自身引用 ====================
+        # 设置页"软件控制与状态"区需要调用本窗口控制方法并读取
+        # is_listening_paused 标志。
+        self.pages["设置"] = SettingsPage(self.contentFrame, fg_color="transparent", main_window=self)
 
         self.showPage("首页")  # 默认显示首页
 
@@ -311,6 +314,13 @@ class MainWindow(ctk.CTk):
         self.showPage("首页")  # 跳转到首页
 
     def refreshExecutor(self):
+        # ==================== 32 号新增：双层守卫的外层 ====================
+        # 内层权威防线在 executor.sync() 本体（isExecuting 早退）。本层同步
+        # 早退：执行期间连全盘冲突重算也不做，保持"执行期间零全局刷新"的
+        # 单一语义；执行结束后下一次任何 UI 触发都会补上（与 sync 静默跳过
+        # 的既定口径一致）。
+        if self.executor and self.executor.isExecuting:
+            return
         # 方案或快捷键变更后，先刷新执行器再决定要不要保持监听
         if self.executor:
             self.executor.sync()
@@ -353,13 +363,16 @@ class MainWindow(ctk.CTk):
         mode = report.get("mode", "关闭")
         has_internal = report.get("has_internal", False)
         has_cross = report.get("has_cross", False)
-
+        # ==================== 31/33 号新增：保留组合冲突，优先级最高 ==========
+        # 硬失效事实（保存了也永不触发），与内部冲突同用红色但排最前，
+        # 让手改 JSON 的人第一眼看见。
+        has_reserved = report.get("has_reserved", False)
+        # ===================================================================
         color = "white"  # 默认白色
-
-        # 优先级调整：先检查内部冲突（最严重）
-        if has_internal:
+        if has_reserved:
+            color = "#FF0000"  # 红色：与软件保留停止组合冲突（永不触发）
+        elif has_internal:
             color = "#FF0000"  # 红色：内部冲突
-        # 其次检查跨方案冲突
         elif has_cross:
             color = "#FFA500"  # 橙色：跨方案冲突
         # 然后检查已启用但检测关闭的警告
@@ -480,7 +493,20 @@ class MainWindow(ctk.CTk):
 
     def quit_app(self):
         """彻底退出程序的通道"""
+        # ==================== 32 号新增：忙碌守卫（与托盘对齐）============
+        # 托盘"退出程序"菜单项 enabled=lambda: not is_busy；本方法层守卫让
+        # 设置页按钮与 appControlSafe 的"退出软件"指令获得同款保护：动作组
+        # 执行中退出 = 监听器销毁 = 停止组合陪葬，且正劫持鼠标的动作组被腰斩。
+        if self.executor and self.executor.is_busy:
+            messagebox.showwarning(
+                "繁忙",
+                "动作组正在执行中，无法退出软件！\n请先用停止组合 / 托盘 / 设置页停止动作组。",
+            )
+            return
+        # ==================================================================
         # 1. 停止执行器和监听器
+        # ……以下原样不动……
+
         if self.executor:
             self.executor.stop()
         # 2. 停止托盘图标
@@ -520,8 +546,24 @@ class MainWindow(ctk.CTk):
         self.handleSchemeStartupChanged()
 
     def toggle_listening_status(self):
-        """切换全局键盘监听状态（供托盘调用）"""
+        """切换全局键盘监听状态（供托盘 / 设置页调用）"""
+        # ==================== 31/32 号新增：忙碌守卫（逃生口保全）==========
+        # 动作组执行中暂停监听 = 销毁 listener = 停止组合陪葬，软件失去唯一
+        # 的键盘逃生口（此时鼠标已被劫持，托盘和 GUI 都点不到）。与"忙碌
+        # 禁暂停"互为因果：守卫在 ⇔ 逃生口在 —— 此逻辑链不可拆除。托盘菜单
+        # 项未置灰是故意的，方法层守卫天然覆盖全部入口。
+        if self.executor and self.executor.is_busy:
+            messagebox.showwarning(
+                "繁忙",
+                "动作组正在执行中，无法暂停监听！\n"
+                "监听器是停止组合（键盘急停）的唯一载体，暂停后将失去唯一的键盘逃生口。\n"
+                "请先用停止组合或托盘停止动作组。",
+            )
+            return
+        # ==================================================================
         if self.is_listening_paused:
+            # ……以下原样不动……
+
             # 当前是暂停状态，需要恢复：强制重启监听器作为兜底
             if self.executor:
                 self.executor.restart()
@@ -533,10 +575,12 @@ class MainWindow(ctk.CTk):
             self.is_listening_paused = True
 
     def force_stop_action_group(self):
-        """供托盘调用的强制停止动作组功能"""
+        """供托盘 / 设置页调用的强制停止动作组功能"""
         if self.executor and self.executor.is_busy:
             self.executor.action_group_interrupt_event.set()
-            messagebox.showinfo("提示", "已发送中断信号，动作组将在当前步骤完成后停止。")
+            # 文案修订（31 号）：硬停在最近的检查点（延迟分片/鼠标插值步）
+            # 立即响应，"当前步骤完成后"是平滑停止的语义，原句张冠李戴。
+            messagebox.showinfo("提示", "已发送强制停止信号，动作组将在最近的检查点立即终止。")
         else:
             messagebox.showinfo("提示", "当前没有正在执行的动作组。")
 

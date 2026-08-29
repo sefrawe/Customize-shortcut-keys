@@ -583,11 +583,17 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             messagebox.showerror("错误", f"修改冲突检测模式失败: {e}")
 
     def render_conflict_report(self, report):
-        """根据主窗口传来的冲突报告，使用 Tag 混排渲染 Textbox"""
+        """根据主窗口传来的冲突报告，使用 Tag 混排渲染 Textbox
+
+        31/33 号新增：保留组合冲突块插在所有模式分支【之前】——
+        保留组合是"永不触发"的硬事实，与检测模式无关（含"关闭"模式），
+        若放进分支内部，"关闭"模式下警告会消失。各分支的
+        "✅ 未检测到冲突"判据同步加入 not has_reserved，避免矛盾输出。
+        """
         if not hasattr(self, 'conflictResultTextbox'):
             return
-
         tb = self.conflictResultTextbox
+
         # 配置颜色 Tag
         tb.tag_config("red_tag", foreground="#FF0000")
         tb.tag_config("orange_tag", foreground="#FFA500")
@@ -599,10 +605,20 @@ class NewShortcutSchemePage(ctk.CTkFrame):
 
         mode = report.get("mode", "关闭")
         is_enabled = report.get("startupEnabled", False)
+        has_reserved = report.get("has_reserved", False)
+
+        # ══════ 31/33 号新增：保留组合冲突（先于一切模式分支）══════
+        # 复用 red_tag（与内部冲突同级严重：都是"保存了也白绑"级别的硬失效），
+        # 排最前让手改 JSON 的人第一眼看见。
+        if has_reserved:
+            tb.insert("end", "⛔ 发现与软件保留停止组合冲突的快捷键（保存了也永远不会触发）:\n", "red_tag")
+            for item in report.get("reserved_conflicts", []):
+                tb.insert("end", f"   ID {item['id']}  按键 {item['key']}  命中: {item['kinds_text']}\n", "red_tag")
+            tb.insert("end", "   停止组合优先级高于所有用户快捷键，请更换这些快捷键的组合。\n\n", "red_tag")
+        # ═══════════════════════════════════════════════════════════
 
         if mode == "关闭":
             # 通过分段按钮判断当前方案是否启用
-
             if is_enabled:
                 tb.insert("end", "⚠️ 方案已启用但冲突检测处于关闭状态\n", "orange_tag")
             else:
@@ -611,56 +627,48 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             # 【新增】当没有任何其他已启用方案时给出提醒
             if report.get("no_other_enabled_scheme", False):
                 tb.insert("end", "⚠️ 当前没有任何其他已启用的方案，此模式将只检测此方案内部的冲突\n", "orange_tag")
-                # 原有逻辑：当选择此模式且方案已启用时显示警告
             elif is_enabled:
                 tb.insert("end", "⚠️ 当前已启用方案为此方案，此模式将只检测此方案内部的冲突\n", "orange_tag")
 
-                # 继续处理冲突检测
             has_internal = report.get("has_internal", False)
             has_cross = report.get("has_cross", False)
 
-            # 1. 渲染内部冲突
             if has_internal:
                 tb.insert("end", "🔴 发现内部冲突:\n", "red_tag")
                 for key, ids in report.get("internal_conflicts", {}).items():
                     tb.insert("end", f" 按键 {key} 被以下 ID 共用: {ids}\n", "red_tag")
 
-            # 2. 渲染跨方案冲突
             if has_cross:
                 if has_internal:
-                    tb.insert("end", "\n")  # 如果有内部冲突，加个空行隔开
+                    tb.insert("end", "\n")
                 tb.insert("end", "🟠 发现跨方案冲突:\n", "orange_tag")
                 for item in report.get("cross_conflicts", []):
                     tb.insert("end",
                               f" 本方案 ID {item['my_id']} 与方案 '{item['other_scheme']}' 的 ID {item['other_id']} 冲突 ({item['key']})\n",
                               "orange_tag")
 
-            # 3. 无冲突
-            if not has_internal and not has_cross:
+            # 31/33：无冲突判定加入 not has_reserved（保留块已在最前输出）
+            if not has_reserved and not has_internal and not has_cross:
                 tb.insert("end", "✅ 未检测到冲突\n", "green_tag")
         else:
-            # 其他模式的处理保持不变
             has_internal = report.get("has_internal", False)
             has_cross = report.get("has_cross", False)
 
-            # 1. 渲染内部冲突
             if has_internal:
                 tb.insert("end", "🔴 发现内部冲突:\n", "red_tag")
                 for key, ids in report.get("internal_conflicts", {}).items():
                     tb.insert("end", f" 按键 {key} 被以下 ID 共用: {ids}\n", "red_tag")
 
-            # 2. 渲染跨方案冲突
             if has_cross:
                 if has_internal:
-                    tb.insert("end", "\n")  # 如果有内部冲突，加个空行隔开
+                    tb.insert("end", "\n")
                 tb.insert("end", "🟠 发现跨方案冲突:\n", "orange_tag")
                 for item in report.get("cross_conflicts", []):
                     tb.insert("end",
                               f" 本方案 ID {item['my_id']} 与方案 '{item['other_scheme']}' 的 ID {item['other_id']} 冲突 ({item['key']})\n",
                               "orange_tag")
 
-            # 3. 无冲突
-            if not has_internal and not has_cross:
+            if not has_reserved and not has_internal and not has_cross:
                 tb.insert("end", "✅ 未检测到冲突\n", "green_tag")
 
         # 重新锁定文本框

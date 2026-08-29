@@ -14,6 +14,12 @@ proJectrootDirectory = Path(__file__).resolve().parent.parent
 configDirectory = proJectrootDirectory / "config"
 globalSettingspath = configDirectory / "Global Settings.json"
 
+# ==================== 31/33 号新增：保留组合检查导入 ====================
+# 导入方向 shortcutUtils -> reservedCombos -> keyNormalizer -> vkKeyMap，
+# 纯数据纯函数链，不经过 configManager，无循环导入风险（本文件顶部警示的
+# 循环导入只存在于 configManager <-> shortcutUtils 之间）。
+from utils.reservedCombos import checkReservedConflict, describeReservedKinds
+
 
 def theNumberOfTargetFilesInTheFolder(folderPath):
     """统计文件夹中快捷键方案文件的数量（排除软件配置文件和无法解析的文件）"""
@@ -248,9 +254,13 @@ def normalize_key_combination(key_str):
 
 
 def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
-    """
-    核心冲突检测逻辑（纯数据逻辑，不涉及UI）
+    """ 核心冲突检测逻辑（纯数据逻辑，不涉及UI）
     返回一个结构化的“冲突报告”字典。
+
+    31/33 号新增字段：
+        has_reserved / reserved_conflicts —— 保留组合冲突。与检测模式无关的
+        硬事实（绑了就会被 executor 路由永久截胡），无条件计算，渲染层据此
+        在包括"关闭"在内的所有模式下显示警告。
     """
     # 1. 找到当前方案的数据
     currentScheme = None
@@ -267,7 +277,10 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
             "internal_conflicts": {},
             "has_cross": False,
             "cross_conflicts": [],
-            "mode": detectionMode
+            "has_reserved": False,          # 31/33 新增，保持报告形状一致
+            "reserved_conflicts": [],       # 31/33 新增
+            "mode": detectionMode,
+            "no_other_enabled_scheme": False,
         }
 
     # 获取当前方案中“已启用”的快捷键
@@ -280,24 +293,43 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
     for sc in currentEnabledShortcuts:
         # 【关键】：使用归一化后的按键进行分组
         normKey = normalize_key_combination(sc.get("keyCombination", ""))
-        if not normKey:  # 空按键组合跳过
+        if not normKey:
             continue
-        # 按按键组合分组，把 ID 放进列表
         internalConflictsMap.setdefault(normKey, []).append(sc.get("id"))
 
-    # 剔除只有1个快捷键使用的按键（即没有冲突的）
     internalConflicts = {k: v for k, v in internalConflictsMap.items() if len(v) > 1}
+
+    # ==============================
+    # 2.5 保留组合冲突检测（31/33 号新增）
+    # ==============================
+    # 校验语义 = checkReservedConflict（别名归一 + 统称通配感知），与
+    # keyValidator 同源 —— 单点真相源，此处禁止重写第二份匹配逻辑。
+    # 注意与内部冲突同口径：只查"已启用"的快捷键。
+    reservedConflicts = []
+    for sc in currentEnabledShortcuts:
+        rawKey = sc.get("keyCombination", "")
+        if not rawKey:
+            continue
+        # 直接拆原始串喂给校验器（它内部做别名归一，不依赖 normalize_key_combination）
+        tokens = [p.strip().lower() for p in rawKey.split('+') if p.strip()]
+        is_reserved, _msg, kinds = checkReservedConflict(tokens)
+        if is_reserved:
+            reservedConflicts.append({
+                "id": sc.get("id"),
+                "key": rawKey,
+                "kinds_text": describeReservedKinds(kinds),
+            })
 
     # ==============================
     # 3. 跨方案冲突检测（看别人）
     # ==============================
     crossConflicts = []
-
     # 【新增】用于前端提醒：当前模式为"当前启用的方案与此方案"时，是否存在其他已启用的方案
     no_other_enabled_scheme = False
 
     # 只有在模式不是"关闭"且不是"仅此方案内"时，才进行跨方案检测
     if detectionMode not in ["关闭", "仅此方案内"]:
+
         # 【新增】若是"当前启用的方案与此方案"模式，先统计除自己外是否有任何启用方案
         if detectionMode == "当前启用的方案与此方案":
             otherEnabledSchemes = [
@@ -306,17 +338,15 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
             ]
             no_other_enabled_scheme = len(otherEnabledSchemes) == 0
 
+        # ==================== 顺带修复（本轮发现④）====================
+        # 原代码在此处的外层 "for scheme in allSchemesData:" 循环体内，又嵌套
+        # 了一层完全相同的外循环（内层变量遮蔽外层），导致每对跨方案冲突被
+        # 重复追加 (方案数-1) 次 —— 只有两个方案时恰好只跑一遍所以从未暴露，
+        # 三个及以上方案时报告里同一冲突出现多行。修复：删除外层循环，
+        # 只保留一遍遍历。语义与文件头部架构文档（"看别人"单遍比对）一致。
+        # =============================================================
         for scheme in allSchemesData:
-            # 不和自己比较
-            if scheme["name"] == targetSchemeName:
-                continue
-            # 如果模式是"当前启用的方案与此方案"，则跳过未启动启用的方案
-            if detectionMode == "当前启用的方案与此方案" and not scheme.get("startupEnabled", False):
-                continue
 
-    # 只有在模式不是“关闭”且不是“仅此方案内”时，才进行跨方案检测
-    if detectionMode not in ["关闭", "仅此方案内"]:
-        for scheme in allSchemesData:
             # 不和自己比较
             if scheme["name"] == targetSchemeName:
                 continue
@@ -351,12 +381,14 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
     # 4. 组装并返回报告
     # ==============================
     return {
-        "scheme_name": targetSchemeName,  # 补上 scheme_name 字段
+        "scheme_name": targetSchemeName,
         "has_internal": len(internalConflicts) > 0,
-        "internal_conflicts": internalConflicts,  # 格式: {"ctrl+alt+1": [0, 2]}
+        "internal_conflicts": internalConflicts,
         "has_cross": len(crossConflicts) > 0,
-        "cross_conflicts": crossConflicts,  # 格式: [{"my_id": 0, "other_scheme": "方案B", "other_id": 1, "key": "ctrl+c"}]
+        "cross_conflicts": crossConflicts,
+        "has_reserved": len(reservedConflicts) > 0,       # 31/33 新增
+        "reserved_conflicts": reservedConflicts,          # 31/33 新增
         "mode": detectionMode,
-        "no_other_enabled_scheme": no_other_enabled_scheme
+        "no_other_enabled_scheme": no_other_enabled_scheme,
     }
 

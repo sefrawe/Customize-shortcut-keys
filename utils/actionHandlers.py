@@ -497,7 +497,25 @@ _MOUSE_BUTTON_MAP = {
 }
 
 def doMouseMoveTo(params: dict, context: dict | None = None):
-    """动作：鼠标移动到指定坐标"""
+    """动作：鼠标移动到指定坐标
+
+    ==================== 31/33 号新增：平滑移动支持硬停 ====================
+    背景：平滑插值循环是全库唯一"用户可设时长的阻塞步"（duration 来自
+    输入框、无上限）。动作组用它劫持鼠标时（31 号的旗舰场景），原实现
+    不看任何中断事件 —— 硬停只能干等当前步走完，"硬停响应 ≤50ms"的
+    口径（延迟分片/步间检查点）覆盖不到这里。
+
+    修订（设计定稿 v3 · 发现③，播放器零改动）：
+    · 中断事件经 context 流入：正式执行由 executor 注入全局硬停事件
+      （doActionGroup 本来就从 context 读它，管道现成，零新增接线）；
+      试运行将由编辑窗注入 local_interrupt（第二轮接线）。旧调用方若
+      没注入则为 None，判空跳过检查，行为退回原样 —— 兼容零成本；
+    · 只查【硬停】，故意不查软停 —— 软停语义是"当前步骤执行完毕再停"，
+      中途打断平滑移动反而违反承诺；
+    · 命中即提前 return，剩余插值直接放弃；动作组玩家会在下一个检查点
+      （延迟分片/步间检查）自行收尾，干净。
+    =======================================================================
+    """
     try:
         x = int(float(params.get("x", "0")))
         y = int(float(params.get("y", "0")))
@@ -519,14 +537,22 @@ def doMouseMoveTo(params: dict, context: dict | None = None):
         # 平滑移动：线性插值，每 5ms 移动一步
         start_x, start_y = m.position
         steps = max(int(duration / 0.005), 1)
+        # 中断事件从 context 读取（契约：handler 一律不直接依赖 executor，
+        # 跨线程信号统一走 context 注入 —— 与 confirm_callback 同款纪律）
+        interrupt_event = (context or {}).get("interrupt_event")
         for i in range(1, steps + 1):
+            # ★ 硬停检查点：每 5ms 一查，响应延迟与插值步长同级
+            if interrupt_event is not None and interrupt_event.is_set():
+                # 提前 return（而非 break）：连函数尾部固定的 0.05s 收尾
+                # sleep 也一并省掉，急停路径上不留任何多余等待
+                return
             progress = i / steps
             cur_x = int(start_x + (x - start_x) * progress)
             cur_y = int(start_y + (y - start_y) * progress)
             m.position = (cur_x, cur_y)
             time.sleep(duration / steps)
-
     time.sleep(0.05)
+
 
 def doMouseMoveStep(params: dict, context: dict | None = None):
     """动作：鼠标步进移动（微调）"""

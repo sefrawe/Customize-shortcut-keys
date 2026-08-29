@@ -419,7 +419,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
 
         # --- 1. 配置颜色 Tag ---
         self.stepSummaryTextbox.tag_config("key_tag", foreground="#569CD6")  # 键名：淡蓝色
-        self.stepSummaryTextbox.tag_config("val_tag", foreground="#DCDCAA")  # 值：淡黄色
+        self.stepSummaryTextbox.tag_config("val_tag", foreground="green")  # 值：绿色
         self.stepSummaryTextbox.tag_config("warn_tag", foreground="#FFA500")  # 警告：橙色
         self.stepSummaryTextbox.tag_config("title_tag", foreground="#4ECDC4")  # 标题：青色
         # ==================== 新增：分隔线专用颜色 Tag（灰色，弱化视觉）====================

@@ -112,7 +112,26 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         bottomFrame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         ctk.CTkButton(bottomFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="right", padx=5)
         ctk.CTkButton(bottomFrame, text="保存步骤", command=self.onSave).pack(side="right", padx=5)
-        ctk.CTkButton(bottomFrame, text="▶ 试运行", fg_color="#2B5797", hover_color="#1B3F6B", command=self.onTrialRun).pack(side="left", padx=5)
+        # ==================== 31 号新增：试运行按钮（双态）====================
+        # 状态机：▶ 试运行 →（点击启动）→ ⏹ 停止试运行 →（线程结束，after 轮询恢复）
+        # 双态共用一个按钮的理由：试运行会劫持鼠标，紧张时刻还要在界面上
+        # 找另一个"停止"按钮是反人性的；原地变色变文案 = 视觉锚点不动。
+        self.trialRunBtn = ctk.CTkButton(
+            bottomFrame, text="▶ 试运行",
+            fg_color="#2B5797", hover_color="#1B3F6B",
+            command=self.onTrialRun
+        )
+        self.trialRunBtn.pack(side="left", padx=5)
+        # 试运行运行时状态：
+        # _trial_running / _trial_thread 只由 GUI 线程读写；
+        # _trial_interrupt 是 GUI 线程与玩家线程的共享句柄（Event 本身线程安全）。
+        self._trial_running = False
+        self._trial_interrupt: threading.Event | None = None
+        self._trial_thread: threading.Thread | None = None
+        # 按钮两种形态集中定义，防止恢复/激活两处魔法值漂移
+        self._trial_btn_idle = {"text": "▶ 试运行", "fg_color": "#2B5797", "hover_color": "#1B3F6B"}
+        self._trial_btn_active = {"text": "⏹ 停止试运行", "fg_color": "#A30000", "hover_color": "#7A0000"}
+        # ====================================================================
         ctk.CTkButton(bottomFrame, text="↺ 重置", fg_color="#555555", hover_color="#404040",command=self._onReset).pack(side="left", padx=5)
 
         logLabel = ctk.CTkLabel(self, text="试运行日志:", font=("微软雅黑", 13, "bold"))
@@ -130,6 +149,22 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self.stopOnErrorOpt.configure(command=self._calculateEstimatedTime)
         self.loopCountEntry.bind("<KeyRelease>", lambda e: self._calculateEstimatedTime())
         self.maxExecEntry.bind("<KeyRelease>", lambda e: self._calculateEstimatedTime())
+
+    def destroy(self):
+        """窗口销毁前的兜底：试运行还在跑就先发停止信号（31 号新增）。
+
+        背景：本窗口没有屏蔽右上角关闭按钮（无 WM_DELETE_WINDOW 协议），
+        用户完全可能在试运行（正劫持鼠标）中直接关窗。不兜底的话：
+        玩家线程变孤儿继续劫持鼠标，且日志回调往已销毁的窗口投递。
+        发信号后玩家在下一个检查点（≤50ms 延迟分片 / mouseMoveTo 插值步 /
+        步间）自然退出；executor 槽位注销由线程侧 finally 完成，
+        不依赖本窗口存活。取消按钮 / onSave / 右上角关闭三条路径
+        全部经过本方法，一处兜底全覆盖。
+        """
+        if self._trial_running and self._trial_interrupt is not None:
+            self._trial_interrupt.set()
+        super().destroy()
+
 
     # ==================== 修复Bug3：新增 _getStepRows 方法 ====================
     # 原代码中多处使用 [w for w in self.scrollFrame.winfo_children() if isinstance(w, ctk.CTkFrame)]
@@ -573,36 +608,182 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self._renderSteps(flush_notes=False)
 
     def onTrialRun(self):
-        """试运行 (逻辑不变，日志框已改跟随主题)"""
+        """试运行入口（31 号改造：双态按钮 + 全局停止组合接线）。
+
+        双态语义：
+          空闲态点击 → 启动试运行（守卫 → 首行警告 → 注册 → 起线程 → 运行态）
+          运行态点击 → set local_interrupt（强制停止），随后等线程自然退出，
+                       after 轮询恢复按钮 —— GUI 线程绝不 join 子线程。
+        """
+        # ── 运行态：本按钮此刻就是"⏹ 停止试运行" ──
+        if self._trial_running:
+            if self._trial_interrupt is not None:
+                self._trial_interrupt.set()  # 幂等：重复 set 无害
+            return
+
+        # ── 空闲态：启动前守卫 ──
+        # 守卫：正式动作组执行中禁止试运行（设计定稿第二节）。
+        # 理由有二：a) 两者都模拟按键/劫持鼠标，并发 = 状态机互相污染；
+        # b) 停止组合的路由一级（is_busy）优先于二级（试运行），并发时
+        #    试运行将无法被全局组合停止 —— 守卫从入口消灭该边界场景。
+        #    （顺带修掉旧版"连点试运行开多线程"的现存问题——运行态分支
+        #    已把第二次点击吃掉，到不了这里。）
+        executor = self._getExecutor()
+        if executor is not None and executor.is_busy:
+            messagebox.showwarning(
+                "无法试运行",
+                "当前有动作组正在执行。\n请等待其结束（或用停止组合 / 托盘停止）后再试运行。",
+                parent=self
+            )
+            return
+
         self._collectUIData()
         if len(self.steps_data) > 50:
             messagebox.showerror("错误", "步骤数量超过绝对上限 50 步！", parent=self)
             return
+
+        # ── 启动 ──
         # 清空旧日志
         self.logTextbox.configure(state="normal")
         self.logTextbox.delete("1.0", "end")
         self.logTextbox.configure(state="disabled")
 
         local_interrupt = threading.Event()
-        # 试运行上下文：重写 confirm_callback 自动点"是"
-        context = {"confirm_callback": lambda msg, holder, evt: (holder.__setitem__(0, True), evt.set())}
+
+        # ==================== 31 号新增：日志首行固定输出 ====================
+        # ① 回声警告（只提示不修）：试运行不改 executor 状态，全局快捷键
+        #    仍在监听，模拟按键可能触发其他快捷键 —— "能用正是试运行的意义"。
+        # ② 停止通道教学。注意：试运行只注册了一个中断事件，所以两条全局
+        #    停止组合在试运行期间【都等效于强制停止】（软/硬之分只属于
+        #    真实动作组）。
+        self._updateLog("⚠ 试运行期间全局快捷键仍在监听，模拟按键可能触发其他快捷键，请留意")
+        self._updateLog("  停止方式：再点一次本按钮（⏹），或按全局停止组合（试运行中两条组合均等效于强制停止）")
+        # ====================================================================
+
+        # 试运行上下文：重写 confirm_callback 自动点"是"（原逻辑不动）
+        # ==================== 31 号新增：注入 interrupt_event ====================
+        # 激活 mouseMoveTo 平滑移动循环里的硬停检查点（utils/actionHandlers
+        # 第一轮已埋，此前试运行没传事件所以不生效）。该事件与注册给
+        # executor 的是同一个对象 → 全局停止组合（路由二级）set 的就是它，
+        # "点按钮"与"按组合"两条路汇于同一信号，语义天然一致。
+        context = {
+            "confirm_callback": lambda msg, holder, evt: (holder.__setitem__(0, True), evt.set()),
+            "interrupt_event": local_interrupt,
+        }
+        # ========================================================================
+
+        # ==================== 31 号新增：注册到 executor（路由二级）====================
+        # 注册后，全局停止组合在"无动作组执行"时会 set 本事件 —— 试运行
+        # 劫持鼠标时按钮点不到，键盘组合是逃生口。注销在本窗口线程体的
+        # finally（见 _trialThreadBody），窗口销毁也不影响。
+        if executor is not None:
+            executor.register_trial_interrupt(local_interrupt)
+        # ========================================================================
+
         player = ActionGroupPlayer(
-            self.steps_data,
-            self.stopOnErrorOpt.get(),
-            context,
-            local_interrupt,
+            self.steps_data, self.stopOnErrorOpt.get(),
+            context, local_interrupt,
             log_callback=self.appendLog,
             confirm_all=False,
             loop_count=int(self.loopCountEntry.get() or 1),
             max_exec_time=int(self.maxExecEntry.get() or 60)
         )
-        threading.Thread(target=player.play, daemon=True).start()
+        self._trial_interrupt = local_interrupt
+        self._trial_running = True
+        self._setTrialButton(self._trial_btn_active)
+
+        self._trial_thread = threading.Thread(
+            target=self._trialThreadBody, args=(player, executor), daemon=True
+        )
+        self._trial_thread.start()
+        # after 轮询线程存活（照抄坐标捕获 _poll_mouse_pos 的先例模式），
+        # 而不是给 player 加 on_finish 回调 —— 播放器保持零改动。
+        t = self._trial_thread
+        self.after(200, lambda: self._pollTrialThread(t))
+
+    def _trialThreadBody(self, player, executor):
+        """试运行线程体：包一层 try/finally 保证注销（31 号硬要求）。
+
+        finally 必须注销：无论正常结束 / 被停止 / 抛异常，都要清掉 executor
+        的单槽引用 —— 否则残留的旧事件会让后续空闲期的停止组合误入路由
+        二级（无害但不干净，且语义错位）。注销走的是本线程持有的引用，
+        不经过 GUI，窗口已销毁也照常执行。
+        """
+        try:
+            player.play()
+        finally:
+            if executor is not None:
+                executor.unregister_trial_interrupt()
+
+    def _pollTrialThread(self, thread):
+        """after 轮询：线程活着就排下一拍，死了就恢复按钮（GUI 线程回调）。"""
+        # 防御：窗口可能在试运行中被关掉 —— Tcl 仍会派发已排期的 after
+        # 回调，但控件已不存在；直接退出，收尾由线程侧 finally 完成。
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        if thread is not None and thread.is_alive():
+            self.after(200, lambda: self._pollTrialThread(thread))
+            return
+        self._onTrialFinished()
+
+    def _onTrialFinished(self):
+        """试运行结束（正常 / 停止 / 异常）后恢复按钮。只由 after 回调调用。"""
+        self._trial_running = False
+        self._trial_interrupt = None
+        self._trial_thread = None
+        self._setTrialButton(self._trial_btn_idle)
+
+    def _setTrialButton(self, spec):
+        """按钮状态的统一写入口，防止多处 configure 漂移。"""
+        try:
+            self.trialRunBtn.configure(**spec)
+        except Exception:
+            # 窗口已销毁的最后防线（正常流程被 _pollTrialThread 守卫挡住）
+            pass
+
+    def _getExecutor(self):
+        """沿 Tk master 链向上找 MainWindow 持有的 executor（31 号新增）。
+
+        为什么不走构造函数传入：本窗口由上游编辑窗打开，改构造签名要连改
+        调用方；而 MainWindow.executor 是全局稳定锚点（托盘同款依赖），
+        沿 master 链上溯必然经过它。找不到时返回 None —— 两个依赖点
+        （忙碌守卫 / 注册）均已判空降级：试运行照常可跑、⏹ 按钮照常可停
+        （local 停止不依赖 executor），只是失去全局停止组合通道与忙碌守卫。
+        层数上限 10 防异常嵌套下绕圈。
+        """
+        widget = self.master
+        for _ in range(10):
+            if widget is None:
+                return None
+            executor = getattr(widget, "executor", None)
+            if executor is not None:
+                return executor
+            widget = getattr(widget, "master", None)
+        return None
 
     def appendLog(self, msg: str):
-        """跨线程日志输出桥梁"""
-        self.after(0, lambda: self._updateLog(msg))
+        """跨线程日志输出桥梁
+
+        31 号加固：试运行窗口可能先于玩家线程被关闭（窗口没有屏蔽右上角
+        关闭按钮）。旧实现直接 self.after —— 控件销毁后 after 抛 TclError，
+        会在玩家线程里炸断 play()。包一层防御：窗口没了就丢弃日志
+        （玩家侧 finally 仍会正常注销 executor 槽位，资源不泄漏）。
+        """
+        try:
+            self.after(0, lambda: self._updateLog(msg))
+        except Exception:
+            pass
 
     def _updateLog(self, msg: str):
+        # 已排期的 after 回调可能在窗口销毁后才执行，同样要设防
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
         self.logTextbox.configure(state="normal")
         self.logTextbox.insert("end", msg + "\n")
         self.logTextbox.see("end")
