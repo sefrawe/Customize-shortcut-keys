@@ -15,10 +15,16 @@ from core.configManager import (
 from utils.interpreterRegistry import INTERPRETER_REGISTRY
 from utils.systemUtils import set_auto_start, is_auto_start_enabled
 
+
 # "监听/执行"状态文案的计算分支收敛到 utils/statusText，与托盘状态行
 # 共用同一函数——本文件不再自持分支，任何口径调整只改 statusText 一处
 # （Bug#34 的教训：两处各写一套必然漂移）。
 from utils.statusText import getListenStatus, getExecStatus
+
+# 35 号修订：停止按钮的组合串改为消费 reservedCombos 真相源——
+# 修订前本文件两处按钮硬编码 "ctrl_r+alt_r+esc" 字面串，是全项目
+# 仅存的组合串副本（换键时若忘改必与监听端漂移），本轮一并清偿。
+from utils.reservedCombos import kindToComboStr, STOP_KIND_HARD, STOP_KIND_SOFT
 
 class SettingsPage(ctk.CTkFrame):
     def __init__(self, master, main_window=None, **kwargs):
@@ -73,13 +79,27 @@ class SettingsPage(ctk.CTkFrame):
         self.toggleListenBtn = ctk.CTkButton(btnRow, text="暂停监听", width=110,
                                              font=("微软雅黑", 13), command=self._onToggleListen)
         self.toggleListenBtn.pack(side="left", padx=5)
-        self.forceStopBtn = ctk.CTkButton(btnRow, text="⏹ 强制停止（ctrl_r+alt_r+esc）", width=110,
-                                          font=("微软雅黑", 13), fg_color="#A30000",
-                                          hover_color="#7A0000", command=self._onForceStop)
+        # 35 号修订：组合串消费 kindToComboStr（唯一真相源），不再硬编码；
+        # width 110 → 150：caps_lock 比 esc 长 6 字符，110 定宽必然截字，
+        # 原 esc 文案本就偏挤，顺手放行。
+        self.forceStopBtn = ctk.CTkButton(
+            btnRow,
+            text=f"⏹ 强制停止（{kindToComboStr(STOP_KIND_HARD)}）",
+            width=150,
+            font=("微软雅黑", 13),
+            fg_color="#A30000", hover_color="#7A0000",
+            command=self._onForceStop,
+        )
         self.forceStopBtn.pack(side="left", padx=5)
-        self.softStopBtn = ctk.CTkButton(btnRow, text="⏸ 平滑停止（ctrl_l+alt_l+esc）", width=110,
-                                         font=("微软雅黑", 13), command=self._onSoftStop)
+        self.softStopBtn = ctk.CTkButton(
+            btnRow,
+            text=f"⏸ 平滑停止（{kindToComboStr(STOP_KIND_SOFT)}）",
+            width=150,
+            font=("微软雅黑", 13),
+            command=self._onSoftStop,
+        )
         self.softStopBtn.pack(side="left", padx=5)
+
         self.quitBtn = ctk.CTkButton(btnRow, text="退出软件", width=110,
                                      font=("微软雅黑", 13), fg_color="#A30000",
                                      hover_color="#7A0000", command=self._onQuit)

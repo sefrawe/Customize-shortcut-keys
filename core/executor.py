@@ -8,12 +8,9 @@
     - pynput 监听线程瞬间返回，不再被剪贴板操作或 time.sleep 阻塞，
       保证全局键盘输入流畅。
 
- 2. 状态锁防重入：
-    - 动作执行前置为 True，执行完毕 置为 False。
-    - 在 handleKeyPress / handleKeyRelease 开头判断此标志：
-      若正在执行，直接忽略所有底层键盘事件。
-    - 目的：阻断 actionHandlers 中模拟按键（如 kb.press('v')）触发的自身
-      监听回调，防止状态机错乱（如"单按Ctrl触发粘贴"的灵异Bug）。
+ 2. 在 handleKeyPress / handleKeyRelease 开头判断此标志：若正在执行，直接忽略所有底层键盘事件” → 改为：
+ “handleKeyRelease 开头判断此标志：执行中忽略所有释放事件；
+handleKeyPress 不再设硬闸（31 号二轮：停止组合路由必须在执行期生效），执行期按键事件由‘停止组合路由 + hasTriggeredCurrentPress 闸门’顺序消化——模拟按键仍到不了快捷键匹配，防灵异触发能力不变
 
  3. 防连发与强制重置：
     - hasTriggeredCurrentPress 保证一轮按键只触发一次动作。
@@ -323,23 +320,61 @@ class Executor:
         # 同一次归一化结果（一次遍历两用，每个按键事件只算一遍）。
         pressedKeyNames = self._normalizePressedKeys(pressed_keys.getPressedKeys())
 
-        # 路由点在最顶端 —— 在下面两个闸门之前。
-        # 铁律：动作组执行中 isExecuting 恒为 True，若路由放在闸门之后，
-        # 停止组合恰在最需要时失效。
-        stop_kind = matchReservedStopCombo(pressedKeyNames)
+        # ── 匹配器按执行状态分期（31 号二轮修订：上提到唯一路由点）─────────
+        # · isExecuting=True → loose 超集匹配：执行期按下集合不可信——
+        #   触发键残留 + 释放事件被 handleKeyRelease 闸门忽略（残留滞留）
+        #   + 模拟按键累积（释放同样被忽略，直到 finally clearKeys）。
+        #   精确相等会漏判"残留之上补按停止组合"——恰是鼠标被劫持时最需要
+        #   命中的场景：以 ctrl_l+alt_l+X 触发后修饰键未松，右手砸下
+        #   ctrl_r+alt_r+caps_lock，六键集合精确必漏、超集必中。
+        # · 其余（空闲 / 试运行期）→ 精确集合相等：集合干净可信，混按
+        #   防手滑语义不放松。试运行期模拟键同样会进集合，但精确匹配
+        #   天然免疫 —— 校验层已在源头拦截"模拟集合恰好凑成保留组合"
+        #   的配置（统称通配感知）。
+        #
+        # 【已接受边界 · loose 误触面】loose 只验"集合包含保留组合"，以下
+        # 两条理论路径可凑成假超集（成员均由模拟键贡献）：
+        #   a) 残留×模拟：用户物理按住某条组合的两个修饰键（触发残留），
+        #      宏恰好模拟第三个成员 caps_lock —— 单键配置不构成保留组合，
+        #      校验层放行；
+        #   b) 跨步累积：同一动作组多个步骤各自模拟不同键，执行期释放被
+        #      忽略 → 集合只增不清，前步模拟的 ctrl_l+alt_l 与后步模拟的
+        #      caps_lock 跨步凑成软停集。
+        # 两条都要求"模拟 caps_lock"这一少见操作参与，概率低；后果轻
+        # （动作组提前停止，无危险性）。与 _executeShortcut finally 处
+        # "已知残余微豁口"同一接受口径，本轮不引入注入检测状态机。
+        # 若实测命中再升级（后备预案，不预先实现）：pynput Listener 的
+        # win32_event_filter 读 KBDLLHOOKSTRUCT 的 LLKHF_INJECTED 位，
+        # 维护与主集合平行增减的"模拟键名集合"，loose 只对
+        # pressedKeyNames - simulatedNames 求值 —— 需动 core/listener.py。
+        if self.isExecuting:
+            stop_kind = matchReservedStopComboLoose(pressedKeyNames)
+        else:
+            stop_kind = matchReservedStopCombo(pressedKeyNames)
+
         if stop_kind is not None:
             if self.is_busy:
-                # 一级：动作组执行中 → 置对应全局事件后静默返回。
-                # 不弹任何模态框（鼠标被劫持时弹了也点不到）；播放器报告机制
-                # 保证"干净的手动停止不写 error_report → 不弹汇总弹窗"，
+                # 一级：动作组执行中 → 硬/软停都接（口径不变）。
+                # 不弹任何模态框（鼠标被劫持时弹了也点不到）；播放器报告
+                # 机制保证"干净的手动停止不写 error_report → 不弹汇总弹窗"，
                 # 鼠标停下本身就是反馈。
                 if stop_kind == STOP_KIND_HARD:
                     self.action_group_interrupt_event.set()
                 elif stop_kind == STOP_KIND_SOFT:
                     self.action_group_soft_stop_event.set()
+            elif stop_kind == STOP_KIND_HARD and self.isExecuting:
+                # ==================== 31 二轮新增：单动作硬停（D4 扩展）=========
+                # 单动作执行期 is_busy=False 但 isExecuting=True：大 duration 的
+                # mouseMoveTo 同样劫持鼠标，键盘是唯一逃生口。只接硬停 ——
+                # 软停"做完当前步再停"对单动作无意义（它自己就是最后一步），
+                # SOFT 在此落入下方三级被吞，语义正确。到达本分支的前提是
+                # 上方 loose 匹配已在执行期生效（D1 修复），否则残留场景
+                # （触发键未松/虚拟集合残留 + 补按停止组合）精确匹配必漏。
+                self.action_group_interrupt_event.set()
+                # ==============================================================
             elif self._trial_interrupt_event is not None:
                 # 二级：试运行注册活跃 → 置试运行局部事件（编辑窗自建事件，
-                # 播放器每步检查）。放在 is_busy 之后：真执行与试运行理论上
+                # 播放器每步检查）。放在真执行之后：真执行与试运行理论上
                 # 不并存（编辑窗入口守卫），此处顺序只是防御性优先级。
                 self._trial_interrupt_event.set()
             # 三级：都不是 → 静默吞掉（不落到底部匹配逻辑）。
@@ -349,23 +384,26 @@ class Executor:
             # 幂等：按住期间 auto-repeat 会反复进入本分支，重复 set 无害；
             # 软停信号已发再按，行为不变。
             #
-            # 触发后置位 hasTriggeredCurrentPress（仅一/二级，三级纯吞不立锁，
-            # 否则空闲试按会莫名锁住后续快捷键）：esc 轻点即松，但两个修饰键
-            # 大概率仍按住；不置位的话，执行若在按住期间结束（软停在步间退出，
-            # 往往就在 esc 松开后几十毫秒内），补按字母键会把 {ctrl_l, alt_l, k}
-            # 送给用户快捷键。置位后须等全部按键松开才解锁 —— 正好符合急停语义。
-            # _stopComboLatched 的作用见 __init__ 注释与 _executeShortcut 的 finally。
-            if self.is_busy or self._trial_interrupt_event is not None:
+            # 立锁条件与"实际置位了事件"的路径一一对应：
+            # · 动作组硬/软停（一级）—— 原口径；
+            # · 单动作硬停（D4 新路径）—— 修饰键残留同理，finally 让路依赖
+            #   本锁，否则执行结束后补按字母键直达用户快捷键；
+            # · 试运行命中（二级）—— 原口径。
+            # 三级纯吞不立锁（空闲试按不锁后续快捷键），口径不变。
+            if (self.is_busy
+                    or (self.isExecuting and stop_kind == STOP_KIND_HARD)
+                    or self._trial_interrupt_event is not None):
                 self.hasTriggeredCurrentPress = True
                 self._stopComboLatched = True
             return
+
         # =========================================================================
 
-        # 如果动作正在执行，直接忽略所有按键事件（包括模拟出来的按键）
-        if self.isExecuting:
-            stop_kind = matchReservedStopComboLoose(pressedKeyNames)
-        else:
-            stop_kind = matchReservedStopCombo(pressedKeyNames)
+        # 【31 号二轮修订 · 死代码清除】原此处还有第二段匹配（isExecuting
+        # 分支调 matchReservedStopComboLoose、否则调精确匹配），其结果
+        # stop_kind 从未被消费 —— 半成品接线，且其上方"直接忽略所有按键
+        # 事件"的注释描述的是已不存在的硬闸门。匹配器分期已上提到上面
+        # 唯一路由点，本段整体删除，不再重复计算。
 
         # 已经触发过一次后，必须等按键集合完全清空，才允许下一次触发
         if self.hasTriggeredCurrentPress:
@@ -377,6 +415,7 @@ class Executor:
             return
 
         self.hasTriggeredCurrentPress = True
+
         # 异步执行动作，防止底层钩子阻塞
         threading.Thread(
             target=self._executeShortcut,
@@ -495,13 +534,20 @@ class Executor:
     def _executeShortcut(self, shortcut: dict):
         """动作分发器：从注册表获取定义并执行（运行在独立子线程中）"""
         self.isExecuting = True
-        #动作组忙碌状态控制
+
+        # 动作组忙碌状态控制
         is_action_group = (shortcut.get("action") == "actionGroup")
         if is_action_group:
             self.is_busy = True
-            self.action_group_interrupt_event.clear()  # 执行前清空中断信号
             # 每次开始新的动作组前，清理上一次可能残留的软停止信号
+            # （软停仍限动作组，清空留在分支内）
             self.action_group_soft_stop_event.clear()
+        # ==================== 31 二轮新增（单动作硬停扩展）：硬停信号无条件清空 ==
+        # 原清空在 is_action_group 分支内。硬停事件改为单动作也注入（见下方
+        # context 注释）后，清空必须同步覆盖单动作路径 —— 否则上一次被硬停
+        # 终止的动作组遗留的 set 信号，会把下一次单动作执行瞬间击杀
+        # （例如 30 秒的 mouseMoveTo 刚起跑就被陈旧信号掐死，且毫无提示）。
+        self.action_group_interrupt_event.clear()
 
         try:
             shortcutName = shortcut.get("name", "")
@@ -545,8 +591,14 @@ class Executor:
                     "app_control_callback": self.appControlCallback,
                     "tip_callback": self.tipCallback,
                     "shortcut_name": shortcutName,
-                    "interrupt_event": self.action_group_interrupt_event if is_action_group else None,
-                    # 只有动作组才需要传入软停止事件，普通动作传 None
+                    # ==================== 31 二轮新增（单动作硬停扩展）================
+                    # 硬停事件恒传入（不再条件化）：单动作（典型 = 大 duration 的
+                    # mouseMoveTo）执行期同样劫持鼠标，托盘/设置页均点不到，其 5ms
+                    # 硬停检查点读的正是本事件 —— 原来单动作传 None，检查点短路成
+                    # 死代码，劫持期间键盘无逃生口，只能干等 duration 自然结束。
+                    # 软停维持动作组限定：软停语义"做完当前步再停"对单动作无意义
+                    # （单动作自己就是最后一步，自然跑完即是软停效果），仍传 None。
+                    "interrupt_event": self.action_group_interrupt_event,
                     "soft_stop_event": self.action_group_soft_stop_event if is_action_group else None,
                 }
                 actionDef.handler(actionParams, context)

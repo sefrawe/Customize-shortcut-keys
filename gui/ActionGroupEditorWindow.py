@@ -629,7 +629,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         #    （顺带修掉旧版"连点试运行开多线程"的现存问题——运行态分支
         #    已把第二次点击吃掉，到不了这里。）
         executor = self._getExecutor()
-        if executor is not None and executor.is_busy:
+        if executor is not None and (executor.is_busy or executor.isExecuting):
             messagebox.showwarning(
                 "无法试运行",
                 "当前有动作组正在执行。\n请等待其结束（或用停止组合 / 托盘停止）后再试运行。",

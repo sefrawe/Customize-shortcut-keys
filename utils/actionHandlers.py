@@ -507,7 +507,9 @@ def doMouseMoveTo(params: dict, context: dict | None = None):
 
     修订（设计定稿 v3 · 发现③，播放器零改动）：
     · 中断事件经 context 流入：正式执行由 executor 注入全局硬停事件
-      （doActionGroup 本来就从 context 读它，管道现成，零新增接线）；
+      （正式执行由 executor 注入全局硬停事件 —— 31 二轮起单动作与动作组两条
+路径恒注入（此前仅动作组路径注入，单动作传 None 使本检查点成死代码，
+已修复）；试运行由编辑窗注入 local_interrupt（已接线）。）；
       试运行将由编辑窗注入 local_interrupt（第二轮接线）。旧调用方若
       没注入则为 None，判空跳过检查，行为退回原样 —— 兼容零成本；
     · 只查【硬停】，故意不查软停 —— 软停语义是"当前步骤执行完毕再停"，
