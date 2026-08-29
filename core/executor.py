@@ -119,6 +119,15 @@ class Executor:
 
         # 定义一个布尔值，用于表示当前监听器是否正在监听按键事件。如果正在监听，则为 True；否则为 False。
         self.isListening = False
+        # 与 isListening 的分工：
+        #   - isListening = "监听器此刻是否在跑"（实际状态，sync/stop/start 都会改它）；
+        #   - isPaused   = "用户是否主动要求暂停"（用户意图，只有 pause()/resume() 改它）。
+        # 分离动机（Bug#34 家族 · 幽灵监听）：暂停后任何配置变更都会触发 sync()，
+        # 旧 sync 只看 isListening 就把监听器拉活，"暂停"名存实亡——快捷键仍在
+        # 偷偷触发。守卫做在 sync()（唯一自动拉活点）；读取方（托盘/设置页）
+        # 经 MainWindow.is_listening_paused property 委托到本标志，真相源唯一。
+        # 写入点仅 pause()/resume() 两处，此外全员只读。
+        self.isPaused = False
         self.listener = KeyboardListener(
             on_key_press=self.handleKeyPress,
             on_key_release=self.handleKeyRelease,
@@ -178,6 +187,49 @@ class Executor:
         self.refresh()
         return self.start()
 
+    # ==================== 34 号新增：暂停 / 恢复（用户意图层）====================
+    def pause(self):
+        """暂停监听（用户主动操作，经 MainWindow.toggle_listening_status 进入）。
+
+        与 stop() 的区别仅在 isPaused 标志：
+          - stop() 是"基础设施动作"，sync()/main.py finally 等内部路径也调，
+            不表达用户意图、不改标志；
+          - pause() 表达"用户要求停"，此后 sync() 的自动拉活被暂停守卫
+            （见 sync 方法内）拦住，直到 resume() 显式解除。
+        忙碌守卫不在此处：MainWindow.toggle_listening_status 的方法层守卫
+        （is_busy 禁暂停，防停止组合逃生口陪葬）已覆盖托盘/设置页全部入口，
+        口径按 31/32 定稿"守卫在方法层一次覆盖"，本方法保持纯粹。
+        """
+        self.listener.stop()
+        self.isListening = False
+        self.isPaused = True
+        return None
+
+    def resume(self):
+        """恢复监听（解除暂停）。
+
+        实现 = 先复位意图标志，再走 restart() 同款"销毁重建"兜底路径：
+          - 复位必须在 restart 之前：restart → start 的链路上若再触发
+            sync（时序上几乎不可能，但守卫语义要求自洽），不应再被
+            暂停拦截；
+          - restart 的 destroy/_buildListener/refresh 链保证旧 listener
+            对象不复用（pynput listener stop 后不可再次 start，必须新建）。
+        无启用方案时 start() 静默返回 None —— 此处补一条提示：否则用户
+        刚点了"恢复监听"，托盘/设置页却显示"未启动"，措辞与实际错位
+        （34 号设计定稿 A 节第 5 条）。
+        """
+        self.isPaused = False
+        result = self.restart()
+        if result is None:
+            # start() 在 activeScheme is None 时静默返回 None，此处兜成可见反馈
+            self.showTip(
+                "当前没有启用任何快捷键方案，监听未启动。\n"
+                "请先在主界面启用一个方案，再恢复监听。"
+            )
+        return result
+    # ==========================================================================
+
+
     def refresh(self):
         """刷新当前启用的快捷键方案和对应快捷键信息。"""
         self.activeScheme = getStartupEnabledShortcutScheme(configDirectory)
@@ -214,6 +266,15 @@ class Executor:
                 self.isListening = False
             return None
         if self.listener is None or not self.isListening:
+            # ==================== 34 号新增：暂停守卫（幽灵监听修复）================
+            # 走到这里说明监听器当前不在跑。旧逻辑无条件拉活——但若用户此前
+            # 主动暂停（isPaused=True），配置变更触发的本方法就会把监听器悄悄
+            # 拉活："暂停"名存实亡，快捷键仍在触发，而托盘/设置页都显示已暂停。
+            # 修复：暂停期间保持停止，只保留上面 refresh() 刷出的最新方案数据，
+            # 等 resume() 显式解除后再拉活。这就是"实际状态(isListening)"与
+            # "用户意图(isPaused)"分离的全部意义。
+            if self.isPaused:
+                return None
             self._buildListener()
             return self.start()
         # 监听器仍在运行时，清空按键集合，防止残留按键状态干扰

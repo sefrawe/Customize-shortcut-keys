@@ -36,7 +36,22 @@ class MainWindow(ctk.CTk):
 
         self.conflict_reports_cache = {}
 
-        self.is_listening_paused = False  # 监听器暂停状态标志，供托盘读取
+        # ==================== 34 号修改：is_listening_paused 改为只读 property ==
+        # 原实例属性 self.is_listening_paused = False 一行【必须删除】：
+        #   1) 实例属性会遮蔽类级 property 使其失效；
+        #   2) property 无 setter，若保留这行赋值会直接 AttributeError。
+        # 暂停标志的真相源下沉为 executor.isPaused（见 core/executor.py），
+        # 本类的 is_listening_paused 改为只读 property 委托读取——托盘
+        # （trayIcon.py）与设置页（SettingsPage.py）现有的
+        # getattr(xxx, 'is_listening_paused', False) 读取点零改动、语义不变。
+        # ======================================================================
+        # 新增：持有托盘引用
+        self.tray_icon = None
+        # ==================== 34 号新增：托盘状态签名轮询状态位 =================
+        # _lastStatusSignature：上一次推送时的状态签名（None = 从未推送，
+        # 首拍必推送一次，把托盘菜单/图标从"启动时构建的旧快照"纠到当前真值）。
+        self._lastStatusSignature = None
+        self._pollStatusAfterId = None
         
         # 新增：持有托盘引用
         self.tray_icon = None
@@ -164,6 +179,13 @@ class MainWindow(ctk.CTk):
             # ★ Bug 修复：此前一直缺失的 tip 注入。生效后所有依赖 showTip 的
             #   错误路径（含新的动作组执行报告）从 print 虚空变为真正可见。
             self.executor.setTipCallback(self.showExecutorTip)
+
+        # 500ms after 轮询（见 _pollStatus）。放主窗口而非设置页：页面可能
+        # 未显示（grid_forget）甚至 --minimized 启动，MainWindow 级轮询
+        # 全场景存活。回调本体 widget-free（只读 executor + 托盘），异常
+        # 全兜底，窗口销毁竞态下最坏是静默空转；mainloop 退出即自然消亡，
+        # quit_app 里另有显式取消（同 SettingsPage.destroy 的纪律）。
+        self._startStatusPolling()
 
     # 切换页面函数，参数name表示要显示的页面名称。思路是隐藏所有页面，然后显示选中的页面，并高亮当前选中的导航按钮。
     def showPage(self, name):
@@ -477,6 +499,94 @@ class MainWindow(ctk.CTk):
             self.switch_scheme_from_tray(scheme_to_enable)
         # =====================================================================
 
+    # ==================== 34 号新增：is_listening_paused 只读 property =========
+    @property
+    def is_listening_paused(self):
+        """监听暂停标志（只读）。
+
+        真相源是 executor.isPaused；本 property 仅是委托转发，保持
+        MainWindow.is_listening_paused 这个既有读取口径不变（托盘与设置页
+        均以 getattr(main_window, 'is_listening_paused', False) 方式读取，
+        property 与 getattr 完全兼容）。executor 为 None（理论上仅存在于
+        极早期窗口构建瞬间）时退化为 False。
+        """
+        if self.executor is None:
+            return False
+        return bool(getattr(self.executor, 'isPaused', False))
+    # ==========================================================================
+
+    # ==================== 34 号新增：托盘状态签名轮询 ===========================
+    def _startStatusPolling(self):
+        """启动 500ms 状态轮询（首拍 500ms 后触发）。"""
+        self._pollStatusAfterId = self.after(500, self._pollStatus)
+
+    def _pollStatus(self):
+        """轮询回调：签名变了才推送托盘（图标 + 菜单），然后续下一拍。
+
+        为什么"变化才推"而不是每次都推：
+          - pystray update_menu() 是 HMENU 销毁重建 + NIM_MODIFY，有真实开销；
+          - 更重要的是把推送语义收敛到一个判据——未来任何新增的状态变化点
+            只要纳入签名元组就自动被覆盖，不会出现"某条路径忘了推送"的
+            新坑（本 bug 的教训）。
+
+        为什么轮询而不是在状态翻转处直调托盘：
+          - is_busy 的翻转发生在 executor 执行子线程，从那里碰 pystray
+            违反"托盘操作收口主线程"的既定纪律；
+          - after 轮询天然把所有线程的状态变化收口到主线程统一观察。
+
+        签名字段取舍（新增状态时在此扩元组即可）：
+          - isPaused / isListening：状态行"监听"文案 + 图标变灰；
+          - is_busy：状态行"执行"文案 + 停止项显隐 + 退出项置灰；
+          - 方案名：状态行"监听中 · 方案: X"；
+          - soft_stop_event.is_set()：托盘"平滑停止"项的 visible 条件
+            （发过一次软停信号后该项隐藏）。
+        """
+        try:
+            sig = self._computeStatusSignature()
+            if sig != self._lastStatusSignature:
+                self._lastStatusSignature = sig
+                self._pushTrayUpdate()
+        except Exception:
+            # 轮询永不因单拍异常中断；widget-free + 全兜底，销毁竞态下静默空转
+            pass
+        finally:
+            try:
+                self._pollStatusAfterId = self.after(500, self._pollStatus)
+            except Exception:
+                # 窗口已销毁（退出流程）：不再续拍，轮询自然终止
+                pass
+
+    def _computeStatusSignature(self):
+        """从 executor 读出当前状态签名（纯只读，GIL 下各字段读取原子）。"""
+        executor = self.executor
+        if executor is None:
+            return (False, False, False, None, False)
+        soft_set = False
+        try:
+            soft_set = executor.action_group_soft_stop_event.is_set()
+        except Exception:
+            pass
+        scheme = executor.getActiveSchemeInfo()
+        scheme_name = scheme.get("name") if scheme else None
+        return (
+            bool(getattr(executor, 'isPaused', False)),
+            bool(getattr(executor, 'isListening', False)),
+            bool(getattr(executor, 'is_busy', False)),
+            scheme_name,
+            soft_set,
+        )
+
+    def _pushTrayUpdate(self):
+        """把当前状态立即推给托盘（图标 + 菜单）。仅主线程调用。"""
+        if self.tray_icon is None:
+            return
+        try:
+            self.tray_icon.refresh_visual_state()
+        except Exception as e:
+            print(f"[托盘] 状态推送失败: {e}")
+    # ==========================================================================
+
+
     def set_tray_icon(self, tray_icon):
         """绑定托盘管理器实例"""
         self.tray_icon = tray_icon
@@ -503,6 +613,18 @@ class MainWindow(ctk.CTk):
                 "动作组正在执行中，无法退出软件！\n请先用停止组合 / 托盘 / 设置页停止动作组。",
             )
             return
+        # ==================== 34 号新增：停掉托盘状态签名轮询 ==================
+        # 回调本体 widget-free、异常全兜底，理论上留着也无害（mainloop 退出
+        # 即亡），但显式取消更干净——与 SettingsPage.destroy 的 after_cancel
+        # 同款纪律，不依赖防御。
+        if getattr(self, '_pollStatusAfterId', None) is not None:
+            try:
+                self.after_cancel(self._pollStatusAfterId)
+            except Exception:
+                pass
+            self._pollStatusAfterId = None
+        # ======================================================================
+
         # ==================================================================
         # 1. 停止执行器和监听器
         # ……以下原样不动……
@@ -544,6 +666,10 @@ class MainWindow(ctk.CTk):
         # 而 refreshExecutor() 内部又调用了 refresh_all_conflict_status()
         # 所以一行代码，配置写入、执行器重载、UI状态刷新、冲突重算全搞定了
         self.handleSchemeStartupChanged()
+        # 方案切换改变签名中的"当前方案名"（状态行文案）与可能的 isListening；
+        # handleSchemeStartupChanged → refreshExecutor → executor.sync() 已在
+        # 本调用栈内同步完成，此处标志必为新值，直接推送即可。
+        self._pushTrayUpdate()
 
     def toggle_listening_status(self):
         """切换全局键盘监听状态（供托盘 / 设置页调用）"""
@@ -562,17 +688,23 @@ class MainWindow(ctk.CTk):
             return
         # ==================================================================
         if self.is_listening_paused:
-            # ……以下原样不动……
-
-            # 当前是暂停状态，需要恢复：强制重启监听器作为兜底
+            # 当前是暂停状态，需要恢复。
+            # 34 号：原 executor.restart() 直调改为 resume() —— isPaused 复位
+            # 收口进 executor，本方法不再手工维护标志（property 只读，写不了
+            # 也不需要写了）；无启用方案时 resume 内部会弹提示。
             if self.executor:
-                self.executor.restart()
-            self.is_listening_paused = False
+                self.executor.resume()
         else:
-            # 当前是正常状态，需要暂停
+            # 当前是正常状态，需要暂停（pause = stop + 立意图标志）
             if self.executor:
-                self.executor.stop()
-            self.is_listening_paused = True
+                self.executor.pause()
+
+        # ==================== 34 号新增：直推托盘 ==============================
+        # 此处标志已翻转（pause/resume 同步改 executor 字段），立即推送一次，
+        # 保证"点完立即再展开托盘"显示的就是新状态；兜底的 ≤500ms 轮询拍
+        # 会因签名比对相同而跳过，不重复推。Bug#34 的"滞后一拍"由此根治。
+        self._pushTrayUpdate()
+        # ======================================================================
 
     def force_stop_action_group(self):
         """供托盘 / 设置页调用的强制停止动作组功能"""

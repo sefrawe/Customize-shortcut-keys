@@ -1,6 +1,13 @@
 ''' 入口文件，启动应用程序 '''
 import sys
 import ctypes
+
+# use_last_error=True：让 ctypes 在每次调用后把 GetLastError 快照到线程私有
+# 缓冲，配 ctypes.get_last_error() 读取。原写法 ctypes.windll 共享全局
+# last error，中间任何 ctypes 调用都可能污染读数，造成"明明没实例却误判
+# 已存在"或反之。这是 WinAPI 调用的标准姿势（34 号定稿 E 节第 2 条）。
+_kernel32 = ctypes.WinDLL('kernel32', use_last_error=True)
+
 import platform
 import threading
 
@@ -24,23 +31,36 @@ def check_single_instance():
 
     # 尝试创建一个已命名的互斥锁
     # 参数：默认安全属性，初始不拥有，锁名称
-    mutex = ctypes.windll.kernel32.CreateMutexW(None, False, mutex_name)
+    # 尝试创建一个已命名的互斥锁
+    # 参数：默认安全属性，初始不拥有，锁名称
+    mutex = _kernel32.CreateMutexW(None, False, mutex_name)
 
     # 获取错误码。如果错误码是 183 (ERROR_ALREADY_EXISTS)，说明锁已存在（已有实例运行）
-    if ctypes.windll.kernel32.GetLastError() == 183:
+    # 34 号：改用 ctypes.get_last_error()（配 use_last_error=True 的线程私有
+    # 快照），不再读可能被中间调用污染的全局 last error
+    if ctypes.get_last_error() == 183:
         return False
+
     return True
 
 def main():
     # ===== 新增：单实例检测 =====
     if not check_single_instance():
+        # ==================== 34 号新增：静默启动撞单例不弹窗 ==================
+        # 开机自启路径带 --silent/--minimized；若此刻已有实例在跑（典型：
+        # 用户手动开过软件，重启电脑触发自启竞态），弹警告窗违背静默语义
+        # （用户什么都没做却弹出窗口）。静默路径直接退出即可——已有实例
+        # 正常服务，无需任何用户交互。
+        if "--minimized" in sys.argv or "--silent" in sys.argv:
+            sys.exit(0)
+        # ======================================================================
         # 隐藏掉 Tkinter 默认的隐藏根窗口，只显示弹窗
         root = ctk.CTk()
         root.withdraw()
         messagebox.showwarning("提示", "自定义快捷键工具已在后台运行，请勿重复启动。")
         root.destroy()
         sys.exit(0)
-    # ============================
+
 
     executor = Executor()
     app = MainWindow(executor=executor)

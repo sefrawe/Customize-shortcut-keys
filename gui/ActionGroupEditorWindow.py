@@ -1,4 +1,4 @@
-""" 动作组编辑窗口 (v7 重构版) """
+""" 动作组编辑窗口"""
 import threading
 from tkinter import messagebox
 

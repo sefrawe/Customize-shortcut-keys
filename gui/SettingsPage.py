@@ -15,6 +15,10 @@ from core.configManager import (
 from utils.interpreterRegistry import INTERPRETER_REGISTRY
 from utils.systemUtils import set_auto_start, is_auto_start_enabled
 
+# "监听/执行"状态文案的计算分支收敛到 utils/statusText，与托盘状态行
+# 共用同一函数——本文件不再自持分支，任何口径调整只改 statusText 一处
+# （Bug#34 的教训：两处各写一套必然漂移）。
+from utils.statusText import getListenStatus, getExecStatus
 
 class SettingsPage(ctk.CTkFrame):
     def __init__(self, master, main_window=None, **kwargs):
@@ -353,34 +357,21 @@ class SettingsPage(ctk.CTkFrame):
                 btn.configure(state="disabled")
             return
 
-        # ── 监听状态：暂停标志为主，辅以 executor.isListening 与方案名 ──
-        paused = bool(getattr(mw, "is_listening_paused", False))
-        listening = bool(executor is not None and executor.isListening)
-        if paused:
-            listen_text, listen_color = "已暂停（可用下方按钮恢复）", "#FFA500"
-        elif listening:
-            scheme = executor.getActiveSchemeInfo() if executor else None
-            name = (scheme or {}).get("name")
-            if name:
-                listen_text, listen_color = f"监听中 · 方案: {name}", "#008000"
-            else:
-                listen_text, listen_color = "监听中（无启用方案）", "#FFA500"
-        else:
-            listen_text, listen_color = "未启动（无启用方案）", "gray"
+        # ── 状态标签：34 号起文案计算收敛到 utils/statusText 单点真相源 ──────
+        # 本方法不再自持"已暂停/监听中/未启动"分支——分支逻辑与托盘状态行
+        # 共用同一函数（判定优先级、措辞、颜色全部单点）。paused 一并从
+        # executor.isPaused 读（与 mw.is_listening_paused property 同一真相源）。
+        listen_text, listen_color = getListenStatus(executor)
+        exec_text, exec_color = getExecStatus(executor)
         self.listenStateLabel.configure(text=listen_text, text_color=listen_color)
-
-        # ── 执行状态：is_busy（动作组）优先，isExecuting（单动作长尾）次之 ──
-        busy = bool(executor is not None and executor.is_busy)
-        executing = bool(executor is not None and executor.isExecuting)
-        if busy:
-            exec_text, exec_color = "动作组执行中（可用停止组合 / 本区按钮停止）", "#FF6B6B"
-        elif executing:
-            exec_text, exec_color = "单动作执行中", "#FFA500"
-        else:
-            exec_text, exec_color = "空闲", "gray"
         self.execStateLabel.configure(text=exec_text, text_color=exec_color)
 
-        # ── 按钮可用性（口径见按钮行注释）──
+        # ── 按钮可用性（口径见按钮行注释，原样保留）──
+        # 忙碌置灰口径（设计定稿第三节）：暂停/恢复监听、退出软件 → 动作组
+        # 执行中禁用；两个停止按钮 → 常启用。轮询置灰存在 ≤500ms 窗口，
+        # 方法层守卫（MainWindow 三个方法）兜底，双保险。
+        paused = bool(getattr(executor, 'isPaused', False))
+        busy = bool(executor is not None and executor.is_busy)
         self.toggleListenBtn.configure(
             text="恢复监听" if paused else "暂停监听",
             state="disabled" if busy else "normal",
