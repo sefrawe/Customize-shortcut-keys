@@ -102,6 +102,19 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         # 添加步骤按钮，绑定限制逻辑
         self.addStepBtn = ctk.CTkButton(headerFrame, text="+ 添加步骤", command=self.addStep, width=120)
         self.addStepBtn.pack(side="right", pady=5)
+        # 试运行运行中会被置灰（见 _setReorderBtnState）；窗口打开本身是模态的，
+        # 与参数编辑/延迟编辑天然互斥，无需额外守卫
+        self.reorderBtn = ctk.CTkButton(
+            headerFrame, text="⇅ 调整顺序", command=self.openReorderWindow, width=110
+        )
+        # side="right" 在 addStepBtn 之后 pack，最终排在"添加步骤"左侧
+        self.reorderBtn.pack(side="right", padx=(0, 5), pady=5)
+        # ==================== 36 号新增：统一设置延迟入口 ====================
+        # 批量操作按钮聚在左侧，"+ 添加步骤"保持最右
+        self.unifiedDelayBtn = ctk.CTkButton(
+            headerFrame, text="⏱ 统一延迟", command=self.openUnifiedDelayEditor, width=110
+        )
+        self.unifiedDelayBtn.pack(side="right", padx=(0, 5), pady=5)
 
         self.scrollFrame = ctk.CTkScrollableFrame(listFrame)
         self.scrollFrame.grid(row=1, column=0, sticky="nsew")
@@ -111,7 +124,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         bottomFrame = ctk.CTkFrame(self, fg_color="transparent")
         bottomFrame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         ctk.CTkButton(bottomFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="right", padx=5)
-        ctk.CTkButton(bottomFrame, text="保存步骤", command=self.onSave).pack(side="right", padx=5)
+        ctk.CTkButton(bottomFrame, text="完成", command=self.onSave).pack(side="right", padx=5)
         # ==================== 31 号新增：试运行按钮（双态）====================
         # 状态机：▶ 试运行 →（点击启动）→ ⏹ 停止试运行 →（线程结束，after 轮询恢复）
         # 双态共用一个按钮的理由：试运行会劫持鼠标，紧张时刻还要在界面上
@@ -658,6 +671,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         #    真实动作组）。
         self._updateLog("⚠ 试运行期间全局快捷键仍在监听，模拟按键可能触发其他快捷键，请留意")
         self._updateLog("  停止方式：再点一次本按钮（⏹），或按全局停止组合（试运行中两条组合均等效于强制停止）")
+        self._updateLog(" 试运行基于启动瞬间的步骤快照执行，期间的修改不影响本次运行")
+
         # ====================================================================
 
         # 试运行上下文：重写 confirm_callback 自动点"是"（原逻辑不动）
@@ -681,15 +696,22 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         # ========================================================================
 
         player = ActionGroupPlayer(
-            self.steps_data, self.stopOnErrorOpt.get(),
-            context, local_interrupt,
+            copy.deepcopy(self.steps_data),  # ★ 37 号：传启动瞬间的快照而非活引用 ——
+            # 修复"试运行期间增删/移动步骤会错乱正在
+            # 跑的迭代"的现存隐患，顺序同理被隔离
+            self.stopOnErrorOpt.get(),
+            context,
+            local_interrupt,
             log_callback=self.appendLog,
             confirm_all=False,
             loop_count=int(self.loopCountEntry.get() or 1),
             max_exec_time=int(self.maxExecEntry.get() or 60)
         )
+
         self._trial_interrupt = local_interrupt
         self._trial_running = True
+        self._setReorderBtnState("disabled")  # 37 号：试运行期间锁定排序入口
+
         self._setTrialButton(self._trial_btn_active)
 
         self._trial_thread = threading.Thread(
@@ -735,6 +757,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self._trial_interrupt = None
         self._trial_thread = None
         self._setTrialButton(self._trial_btn_idle)
+        self._setReorderBtnState("normal")   # 37 号：试运行结束，恢复排序入口
+
 
     def _setTrialButton(self, spec):
         """按钮状态的统一写入口，防止多处 configure 漂移。"""
@@ -743,6 +767,17 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         except Exception:
             # 窗口已销毁的最后防线（正常流程被 _pollTrialThread 守卫挡住）
             pass
+
+    def _setReorderBtnState(self, state: str):
+        """排序入口按钮的统一写入口（试运行启动/结束两处调用）。
+        包一层防御：试运行线程可能晚于窗口销毁才结束，
+        与 _setTrialButton 的 try/except 同款理由。"""
+        try:
+            if hasattr(self, "reorderBtn") and self.reorderBtn.winfo_exists():
+                self.reorderBtn.configure(state=state)
+        except Exception:
+            pass
+
 
     def _getExecutor(self):
         """沿 Tk master 链向上找 MainWindow 持有的 executor（31 号新增）。
@@ -848,6 +883,103 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             self.estimatedTimeLabel.configure(text=f"预估最少执行时间（总延迟时间）: {estimated_sec:.1f} 秒")
         except (ValueError, ZeroDivisionError):
             self.estimatedTimeLabel.configure(text="计算错误")
+
+    # ==================== 37 号新增：步骤排序功能 ====================
+
+    def openReorderWindow(self):
+        """打开步骤排序专用弹窗。
+        数据流纪律（设计定稿第六节铁律①②在此，③④在下方与排序窗内）：
+        ① 先 flush 备注，再拍快照 —— 编辑窗里未回写的备注不能丢在快照之外；
+        ② 快照 deepcopy —— 排序窗全程持有独立副本，与父窗后续任何操作互不干扰。"""
+        if not self.steps_data:
+            messagebox.showinfo("提示", "当前动作组没有步骤，无需排序。", parent=self)
+            return
+        self._flushNoteTextboxes()                  # 铁律①：控件序==数据下标序，此刻 flush 安全
+        snapshot = copy.deepcopy(self.steps_data)   # 铁律②：独立快照
+        win = ReorderStepsWindow(self, snapshot, apply_callback=self._applyReorderResult)
+        self.wait_window(win)
+
+    def _applyReorderResult(self, new_order: list):
+        """排序窗「完成」的回写口（排序窗 finalize 时调用，本方法在主线程执行）。"""
+        # 铁律②（写回侧）：原地切片赋值 —— steps_data 是 _actionGroupData["steps"]
+        # 的别名，原地写回让所有既有引用（含 ShortcutEditWindow 侧持有的同一字典）
+        # 同步看到新顺序，不依赖 onSave 重新赋值 key 的隐式巧合。
+        self.steps_data[:] = new_order
+        # 铁律③：此刻父窗的旧行还是旧顺序，默认 flush 会把旧序第 i 行的备注
+        # 写进新序第 i 槽 —— 备注全部错位。与 _moveStep 的 flush_notes=False 同款理由。
+        self._renderSteps(flush_notes=False)
+
+    # ==================== 36 号新增：统一设置延迟 ====================
+    def openUnifiedDelayEditor(self):
+        """统一设置所有步骤的「完成后延迟」（36 号）。
+
+        交互流：弹 DelayEditorWindow（与单步延迟编辑共用同一套 UI/毫秒单位/
+        旧数据兼容逻辑）→ 弹一次覆盖确认 → 全量写回 → 逐行刷新延迟按钮
+        文字 + 重算预估时间。全程不重建行控件。
+
+        设计取舍：
+        · 复用 DelayEditorWindow 而非另写弹窗：类型映射、统一毫秒、旧版
+          秒→毫秒兼容全在里面，零新 UI 代码；「会覆盖 N 步」的关键信息
+          由确认弹窗承载，兼做破坏性批量操作的防呆口。
+        · 确认弹窗不可省：这是本窗口唯一的批量覆盖写，一次点击抹掉所有
+          步骤的既有延迟，askyesno 给用户最后一眼核对数值与影响面。
+        · 不整体重渲染、只刷 _delay_btn 文字：延迟不属于行结构变化，
+          重渲染会销毁全部行、打断用户正在敲的备注。与 _openDelayEditor
+          单步保存后只改按钮文字的既有口径一致。
+          —— 因此这里【不需要】_flushNoteTextboxes：备注框从头到尾没被动过。
+        · 逐步 deepcopy：绝不能把同一个 delayAfter 字典对象赋给所有步骤
+          （共享可变引用 = 复制步骤一节点名的坑），各步独立持副本，
+          未来任何单步编辑/复制都不会串扰。
+        · 含已禁用步骤：语义就是"全部"，禁用步骤一并更新，将来重新启用
+          时与其余步骤行为一致，不产生隐蔽差异。
+        · 不加试运行置灰（与 reorderBtn 不同）：试运行跑的是启动瞬间的
+          deepcopy 快照（37 号第七节），此刻改延迟不影响正在跑的轮次。
+        """
+        if not self.steps_data:
+            messagebox.showinfo("提示", "当前动作组没有步骤，无需设置延迟。", parent=self)
+            return
+
+        editor = DelayEditorWindow(self, {"type": "none", "value": 0})
+        self.wait_window(editor)
+        if editor.result is None:
+            return  # 用户取消
+
+        new_delay = editor.result
+        delay_text = self._delayTypeToText(new_delay)
+        value_text = "" if new_delay.get("type") == "none" \
+            else f"（{new_delay.get('value', 0)} 毫秒）"
+
+        # if not messagebox.askyesno(
+        #         "确认统一设置延迟",
+        #         f"将把全部 {len(self.steps_data)} 个步骤（含已禁用）的\n"
+        #         f"「完成后延迟」统一设置为：{delay_text}{value_text}\n\n"
+        #         f"每个步骤原有的延迟设置都会被覆盖，是否继续？",
+        #         parent=self,
+        # ):
+        #     return
+
+        for step in self.steps_data:
+            step["delayAfter"] = copy.deepcopy(new_delay)
+
+        self._refreshAllDelayButtons()
+        self._calculateEstimatedTime()  # 没走 _renderSteps，预估时间需手动刷新
+
+    def _delayTypeToText(self, delay_cfg: dict) -> str:
+        """delayAfter 配置 → 中文文案。把散落三处的映射字典收拢成单点，
+        _createStepRow / _openDelayEditor 里的旧副本可后续顺手迁移。"""
+        delay_type_map = {"none": "无延迟", "fixed": "固定时间", "wait_release": "等待释放"}
+        return delay_type_map.get(delay_cfg.get("type", "none"), "无延迟")
+
+    def _refreshAllDelayButtons(self):
+        """逐行刷新延迟按钮文字（不重建任何行控件）。
+        行框取自 _getStepRows()，列表序与 steps_data 下标天然一一对应
+        （TODO30b 的 _is_step 标记纪律保证）；照惯例带越界防御。"""
+        for i, rf in enumerate(self._getStepRows()):
+            if i >= len(self.steps_data):
+                break
+            rf._delay_btn.configure(
+                text=f"⏱ {self._delayTypeToText(self.steps_data[i].get('delayAfter', {}))}"
+            )
 
 
 class DelayEditorWindow(ctk.CTkToplevel):
@@ -1022,3 +1154,526 @@ class StepParamEditorWindow(ctk.CTkToplevel):
             collected[key] = val
         self.result = collected
         self.destroy()
+
+class ReorderStepsWindow(ctk.CTkToplevel):
+    """步骤排序专用弹窗（37 号，设计定稿 v1 + 使用反馈修订 v2）。
+
+    v2 修订（用户实测反馈四点）：
+    1. 序号输入改为【显式提交】模型：Enter /「↻ 刷新」才应用，失焦丢弃草稿。
+       理由：实测中"失焦即应用"不符合输入习惯——输入后按 Enter 无反应，
+       界面纹丝不动，让人以为功能失效；显式提交语义也更清晰。
+       「完成」会自动应用焦点框的未提交草稿，不丢输入。
+       附带收益：原"失焦触发重渲染 → 拖拽把手死点击"的已知边界自然消失
+       （重渲染不再由失焦触发，v1 定稿四.4 可以勾销）。
+    2. 正在编辑序号的行持续高亮（FocusIn 起，至提交/失焦止），追踪"在改哪行"。
+    3. 移动完成后该行在新位置橙色闪烁 1.2 秒，确认结果。
+    4. 拖拽过程画橙色插入指示线（canvas 画线，不影响布局不触重排），
+       落点一目了然；边缘自动滚动时同步重画，线始终指向真实落点。
+    """
+
+    # ---- 集中常量（防魔法值漂移）----
+    ROW_HEIGHT = 44          # 等高行 —— 落点中点判定的前提
+    EDGE_PX = 30             # 距列表上/下边缘多少像素内触发自动滚动
+    SCROLL_STEP = 0.02       # 自动滚动每拍推进的视图比例（50ms/拍 ≈ 40%每秒）
+    DRAG_COLOR = "#3A5A7A"   # 被拖行 / 编辑中行的高亮色（深蓝）
+    FLASH_COLOR = "#C97A1A"  # 移动完成后新位置的闪烁色（橙棕）
+    FLASH_MS = 1200          # 闪烁持续毫秒数
+    DROP_LINE_COLOR = "#FFA500"  # 拖拽插入指示线颜色（橙）
+    ROW_HEIGHT = 44  # 行的初始请求高度（备注自适应后，实际行高由内容决定）
+
+    def __init__(self, parent, steps_snapshot: list, apply_callback):
+        super().__init__(parent)
+        self.title("调整步骤顺序")
+        self.geometry("560x520")
+        self.minsize(480, 380)
+        self.grab_set()  # 模态：与父窗一切编辑操作互斥
+
+        self._applyCallback = apply_callback
+        # 重置基准（永不改动）与工作副本（一切渲染/移动只动它）。
+        # 父窗传入的已是 deepcopy，这里各再拷一层，让「重置」永远有干净参照
+        self._initialOrder = copy.deepcopy(steps_snapshot)
+        self._workSteps = copy.deepcopy(steps_snapshot)
+
+        # ---- 运行期状态 ----
+        self._rowFrames: list = []      # 当前行框引用（落点判定 / 视觉恢复）
+        self._indexEntries: list = []   # 各行序号 Entry 引用（Enter/完成时按行取值）
+        self._focusedRowIndex: int = -1  # 当前聚焦序号框所在行（-1 = 无）
+        self._dragIndex: int = -1       # 正在拖拽的行下标
+        self._dragActive: bool = False  # 拖拽会话总闸（bind_all 回调第一行就查它）
+        self._edgeDirection: int = 0    # 自动滚动方向：-1 上 / 0 停 / +1 下
+        self._autoScrollJob = None      # 自动滚动 after 任务句柄（单实例）
+        self._lastMotionY: int = 0      # 最后一次鼠标屏幕 y（自动滚动时重画指示线用）
+        self._dropLineId = None         # 指示线的 canvas item id（None = 未画）
+        self._lastMovedIndex: int = -1  # 刚被移动的行在新位置的下标（闪烁用）
+        self._flashJob = None           # 闪烁清除 after 句柄（单实例）
+        self._noteBoxFocus: bool = False  # 焦点是否压在某行备注只读框上（Enter 守卫用）
+        self._rendering: bool = False   # 渲染期重入护栏（见 _renderRows）
+
+        self._buildUI()
+        self._renderRows()
+
+        # 应用级鼠标绑定：bind_all 挂在全局 'all' bindtag 上，指针在窗口内任何
+        # 控件（含其他行、滚动区）上移动/松开都会进入回调 —— 这是"把手起拖、
+        # 全窗落点"的关键，绕开 CTk 控件内部 canvas 吞事件的层级问题。
+        # _dragActive 总闸保证非拖拽期零开销；本项目没有其他 'all' 级绑定，
+        # destroy 时 unbind_all 不会误伤。
+        self.bind_all("<B1-Motion>", self._onGlobalMotion, add="+")
+        self.bind_all("<ButtonRelease-1>", self._onGlobalRelease, add="+")
+        # v2：窗口级 Enter —— 焦点在任何控件（含序号 Entry 内部 entry）上按
+        # Enter 都会冒泡到本窗口的 bindtag。这是序号输入的主提交通道
+        self.bind("<Return>", self._onEnterKey)
+        # X 关闭键与「完成」同一条 finalize（设计定稿五.4）
+        self.protocol("WM_DELETE_WINDOW", self._finalize)
+
+    # ────────────────── UI 构建 ──────────────────
+
+    def _buildUI(self):
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)   # 中部滚动区吃掉全部剩余高度
+
+        # 顶部操作说明（灰色弱化；v2 文案同步显式提交模型）
+        ctk.CTkLabel(
+            self,
+            text="拖动 ☰ 移动（有橙色指示线）；或在序号框输入目标位后按 Enter / 点「刷新」",
+            font=("微软雅黑", 12), text_color="gray",
+        ).grid(row=0, column=0, sticky="ew", padx=10, pady=(8, 2))
+
+        # 中部滚动列表
+        self.listScroll = ctk.CTkScrollableFrame(self)
+        self.listScroll.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
+        self.listScroll.grid_columnconfigure(0, weight=1)
+
+        # 底部按钮：完成最右，重置、刷新依次向左（刷新与 Enter 同一入口）
+        btnFrame = ctk.CTkFrame(self, fg_color="transparent")
+        btnFrame.grid(row=2, column=0, sticky="ew", padx=10, pady=8)
+        ctk.CTkButton(btnFrame, text="完成", width=100,
+                      command=self._finalize).pack(side="right", padx=5)
+        ctk.CTkButton(btnFrame, text="重置", width=100,
+                      fg_color="#555555", hover_color="#404040",
+                      command=self._onReset).pack(side="right", padx=5)
+        # v2：刷新按钮。CTkButton takefocus=0，点击不夺焦点 —— 焦点仍留在
+        # 序号框里，所以它和 Enter 行为完全一致（有焦点框就应用其输入）
+        ctk.CTkButton(btnFrame, text="↻ 刷新", width=100,
+                      command=self._onEnterKey).pack(side="right", padx=5)
+
+    # ────────────────── 行渲染 ──────────────────
+
+    def _renderRows(self):
+        """按 _workSteps 当前顺序重建全部行。
+        排序窗内的重渲染没有父窗那种 flush 错位风险 —— 持有的是独立快照，
+        行控件直接从数据生成、从不回写，天然满足"控件序 == 数据下标序"。
+        """
+        # 渲染期重入护栏：销毁旧行可能引发迟到的 FocusOut 等事件，
+        # 渲染期间一律拒绝移动操作，防止用过期下标改数据
+        self._rendering = True
+        self._noteBoxFocus = False  # 旧行全部销毁，焦点归属随之清零
+
+        try:
+            # 1. 记录滚动位置（重渲染后恢复，防大列表跳顶 —— 设计定稿三.5）
+            canvas = self.listScroll._parent_canvas   # 私有 canvas，addStep 已有先例
+            try:
+                prev_top = canvas.yview()[0]
+            except Exception:
+                prev_top = 0.0
+
+            # 2. 清空旧行（指示线是 canvas item，随行销毁引用失效，一并复位）
+            self._clearDropLine()
+            for w in self.listScroll.winfo_children():
+                w.destroy()
+            self._rowFrames.clear()
+            self._indexEntries.clear()
+
+            # 3. 逐行重建（等高行）
+            for i, step in enumerate(self._workSteps):
+                row = ctk.CTkFrame(self.listScroll, height=self.ROW_HEIGHT, corner_radius=5)
+                row.pack(fill="x", pady=2, padx=2)
+                # v2.5：去掉 grid_propagate(False)，行高改由内容决定。
+                # 落点判定与指示线读的是每行实时几何，从不依赖等高，变高行安全
+                row.grid_columnconfigure(3, weight=1)  # 备注列吃掉剩余宽度
+
+                row.grid_columnconfigure(3, weight=1)   # 备注列吃掉剩余宽度
+
+                enabled = step.get("enabled", True)
+
+                # v2.3：刚被移动的行在新位置闪烁高亮（用户要求"能看到结果"）
+                if i == self._lastMovedIndex:
+                    row.configure(fg_color=self.FLASH_COLOR)
+
+                # 3.1 序号 Entry：FocusIn 高亮所在行；FocusOut 丢弃草稿恢复
+                #     显示（v2 显式提交模型，应用只走 Enter/刷新/完成）
+                idx_entry = ctk.CTkEntry(row, width=46, justify="center",
+                                         font=("微软雅黑", 13))
+                idx_entry.insert(0, str(i + 1))
+                idx_entry.grid(row=0, column=0, padx=(6, 2), pady=5)
+                idx_entry.bind("<FocusIn>",
+                               lambda e, idx=i: self._onIndexFocusIn(idx))
+                idx_entry.bind("<FocusOut>",
+                               lambda e, w=idx_entry, idx=i: self._onIndexFocusOut(w, idx))
+                self._indexEntries.append(idx_entry)
+
+                # 3.2 ☰ 拖拽把手：仅此控件响应起拖（整行绑事件会与备注/按钮打架）
+                handle = ctk.CTkLabel(row, text="☰", width=28, font=("微软雅黑", 15))
+                handle.grid(row=0, column=1, padx=2)
+                handle.bind("<Button-1>", lambda e, idx=i: self._onDragStart(idx))
+
+                # 3.3 动作名（定宽；禁用行灰显 + ⛔ 标记）
+                action_def = getActionDefByKey(step.get("action", ""))
+                name_text = action_def.displayName.split("\n")[0] if action_def else "（无动作）"
+                name_label = ctk.CTkLabel(
+                    row, text=name_text, width=185, anchor="w", font=("微软雅黑", 13),
+                    text_color=("gray" if not enabled else None),
+                )
+                name_label.grid(row=0, column=2, padx=2, sticky="w")
+                if not enabled:
+                    name_label.configure(text=name_text + " ⛔")
+
+                # 3.4 备注：多行只读完整展示（v2.5，与父窗备注控件同款风格）
+                note_text = str(step.get("note", "")).strip()
+                note_box = ctk.CTkTextbox(
+                    row, font=("微软雅黑", 12), height=28, border_width=0,
+                    fg_color="transparent", text_color="gray",
+                    activate_scrollbars=False,
+                )
+                note_box.insert("1.0", note_text if note_text else "（无备注）")
+                # 只读口径：排序窗只管顺序。必须 disabled —— 可编辑的话，
+                # 打的字会被任何一次重渲染无声丢弃，是"假编辑"
+                note_box.configure(state="disabled")
+                note_box.grid(row=0, column=3, sticky="ew", padx=(2, 8), pady=5)
+                # 记录焦点归属：Enter 守卫需要知道焦点是否压在备注框里
+                note_box.bind("<FocusIn>", lambda e: setattr(self, "_noteBoxFocus", True))
+                note_box.bind("<FocusOut>", lambda e: setattr(self, "_noteBoxFocus", False))
+                self._adjustNoteBoxHeight(note_box)
+                self._rowFrames.append(row)
+            # 4. 恢复滚动位置（update_idletasks 让 scrollregion 先算完再 moveto）
+            try:
+                self.listScroll.update_idletasks()
+                canvas.yview_moveto(prev_top)
+            except Exception:
+                pass
+
+            # 5. v2.3：安排闪烁清除（单实例：再次移动会先取消旧任务）
+            if self._lastMovedIndex >= 0:
+                if self._flashJob is not None:
+                    try:
+                        self.after_cancel(self._flashJob)
+                    except Exception:
+                        pass
+                self._flashJob = self.after(self.FLASH_MS, self._clearFlash)
+        finally:
+            self._rendering = False
+
+    def _clearFlash(self):
+        """闪烁到点熄灭。三重防御：该行正被拖拽 / 正被编辑 → 不熄
+        （它们各自的恢复路径负责）；行已被销毁 → 静默。"""
+        self._flashJob = None
+        idx = self._lastMovedIndex
+        self._lastMovedIndex = -1
+        try:
+            if 0 <= idx < len(self._rowFrames) \
+                    and not self._dragActive and idx != self._focusedRowIndex:
+                self._rowFrames[idx].configure(fg_color="transparent")
+        except Exception:
+            pass
+
+    def _adjustNoteBoxHeight(self, textbox):
+        """按内容行数调整备注框高度（排序窗版，思路同父窗 _adjust_note_height）。
+        排序窗备注列比父窗窄，按每行约 16 个中文字符估算折行；
+        估多了只是底部留白，估少了行偏矮，都不影响正确性。"""
+        content = textbox.get("1.0", "end-1c")
+        lines = content.count("\n") + 1
+        if len(content) > 16:
+            lines += len(content) // 16
+        new_height = max(28, (lines * 18) + 12)
+        if textbox.cget("height") != new_height:
+            textbox.configure(height=new_height)
+
+
+    # ────────────────── 核心移动原语 ──────────────────
+
+    def _reorder(self, from_index: int, target_index: int) -> bool:
+        """核心移动原语（拖拽与改序号共用这一条数据路径 —— 设计定稿四.1）：
+        取出 from_index 的步骤，插入到【当前列表】target_index 之前。
+        target_index 为 insert-before 语义，合法域 [0, n]（n = 追加到末尾之后）。
+        返回是否发生了实际移动。
+        """
+        n = len(self._workSteps)
+        from_index = max(0, min(from_index, n - 1))
+        target_index = max(0, min(target_index, n))
+        if target_index in (from_index, from_index + 1):
+            return False    # 原地（含"紧贴自己下方"），语义上等于没动
+        step = self._workSteps.pop(from_index)
+        # pop 之后：若 target 在 from 右侧，需 -1 补偿删除带来的整体左移
+        insert_at = target_index - 1 if target_index > from_index else target_index
+        self._workSteps.insert(insert_at, step)
+        # v2.3：记录新位置，渲染后该行闪烁确认
+        self._lastMovedIndex = insert_at
+        self._renderRows()
+        return True
+
+    # ────────────────── 通道一：改序号（显式提交） ──────────────────
+
+    def _onIndexFocusIn(self, row_index: int):
+        """序号框获得焦点：所在行持续高亮（v2.2），并记录行号供 Enter 使用。
+        CTkButton/CTkLabel 都是 takefocus=0，点击它们不会夺走焦点 ——
+        所以高亮会一直保持到提交或点到真正可聚焦的控件为止。"""
+        self._focusedRowIndex = row_index
+        try:
+            self._rowFrames[row_index].configure(fg_color=self.DRAG_COLOR)
+        except Exception:
+            pass
+
+    def _onIndexFocusOut(self, entry_widget, row_index: int):
+        """序号框失焦：丢弃草稿、恢复显示实际序号、取消行高亮。
+        v2 取舍（显式提交模型）：失焦 = 放弃本次输入，应用的唯一通道是
+        Enter / 刷新 / 完成。好处是没有"半提交"的悬空草稿态，语义唯一。
+        _rendering 护栏：渲染销毁旧框时迟到的 FocusOut 直接跳过
+        （winfo_exists 防御已销毁场景）。"""
+        if self._rendering:
+            return
+        try:
+            if entry_widget.winfo_exists():
+                entry_widget.delete(0, "end")
+                entry_widget.insert(0, str(row_index + 1))
+        except Exception:
+            pass
+        if self._focusedRowIndex == row_index:
+            self._focusedRowIndex = -1
+        try:
+            # 该行若同时正被拖拽，颜色由拖拽路径负责恢复，这里不动
+            if not self._dragActive and 0 <= row_index < len(self._rowFrames):
+                self._rowFrames[row_index].configure(fg_color="transparent")
+        except Exception:
+            pass
+
+    def _onIndexCommit(self, entry_widget, row_index: int):
+        """应用某行序号框的输入为"移到第 N 位"。
+        v2 起只由 Enter / 刷新 / 完成三条显式路径调用（失焦不再调用）。
+        校验规则：空/非数字 → 恢复原值不动；合法数字 → 钳位到 [1, N] 后移位。"""
+        def _restore():
+            entry_widget.delete(0, "end")
+            entry_widget.insert(0, str(row_index + 1))
+
+        raw = entry_widget.get().strip()
+        n = len(self._workSteps)
+        if not raw or not raw.isdigit():
+            _restore()      # 空/非数字 → 恢复原值（设计定稿四.3）
+            return
+        pos = max(1, min(int(raw), n))    # 钳位到合法区间
+        if pos == row_index + 1:
+            _restore()      # 目标就是原位：仅恢复显示（顺带吃掉前导 0 等写法）
+            return
+        # "第 N 位"（最终位置语义）换算为 _reorder 的 insert-before 下标：
+        #   f <  N → target = N     （向后移：pop 后插到 N-1 位）
+        #   f >= N → target = N - 1 （向前移）
+        target = pos if row_index < pos else pos - 1
+        self._reorder(row_index, target)
+
+    def _onEnterKey(self, event=None):
+        """Enter /「↻ 刷新」的统一入口（v2 主提交通道）。
+        两个分支：
+        ① 焦点在某行序号框 → 应用该框输入（_reorder 成功即重渲染，
+           失败/非法则只恢复显示）；
+        ② 焦点不在序号框 → 纯重渲染，对齐显示（按钮名义上的"刷新"语义）。
+        注意：row_index 直接用 _focusedRowIndex 是安全的 —— 显式提交模型下
+        两次提交之间不可能发生重排，渲染时记录的行号始终有效。"""
+        # v2.5 守卫：焦点压在备注只读框上时按 Enter —— 框已 disabled，Enter
+        # 无编辑意义；不拦的话窗口级 <Return> 会走纯刷新，把光标所在的
+        # 备注框销毁，视觉上像"按 Enter 窗口闪一下"
+        if self._noteBoxFocus:
+            return
+
+        idx = self._focusedRowIndex
+        if 0 <= idx < len(self._indexEntries):
+            try:
+                if self._indexEntries[idx].winfo_exists():
+                    self._onIndexCommit(self._indexEntries[idx], idx)
+                    return
+            except Exception:
+                pass
+        self._renderRows()   # 无焦点框：纯刷新对齐
+
+    # ────────────────── 通道二：拖拽 ──────────────────
+
+    def _onDragStart(self, index: int):
+        """把手按压：进入拖拽会话。
+        只做状态记录与视觉标记，【不重排不重建】—— 拖拽期间渲染会销毁重建控件，
+        既打断事件链又破坏"行框 ↔ 数据下标"的对应（设计定稿三.3）。"""
+        if self._rendering or not (0 <= index < len(self._workSteps)):
+            return
+        self._dragIndex = index
+        self._dragActive = True
+        self._edgeDirection = 0
+        try:
+            self._rowFrames[index].configure(fg_color=self.DRAG_COLOR)
+        except Exception:
+            pass
+        # 启动自动滚动轮询（单实例：已有任务在跑就不重复起）
+        if self._autoScrollJob is None:
+            self._autoScrollJob = self.after(50, self._autoScrollTick)
+
+    def _onGlobalMotion(self, event):
+        """bind_all 级运动回调：非拖拽期直接返回（总闸）。
+        v2 职责两件：更新边缘滚动方向 + 重画插入指示线（v2.4）。"""
+        if not self._dragActive or self._rendering:
+            return
+        self._lastMotionY = event.y_root   # 自动滚动重画线时要复用
+        try:
+            canvas = self.listScroll._parent_canvas
+            rel_y = event.y_root - canvas.winfo_rooty()
+            if rel_y < self.EDGE_PX:
+                self._edgeDirection = -1
+            elif rel_y > canvas.winfo_height() - self.EDGE_PX:
+                self._edgeDirection = +1
+            else:
+                self._edgeDirection = 0
+        except Exception:
+            self._edgeDirection = 0
+        self._updateDropIndicator(event.y_root)
+
+    def _hitTestTarget(self, y_root: int):
+        """落点判定（松手提交与运动画线共用这一份逻辑，防两处漂移）：
+        指针落在哪一行 → 上半返回 i（插其前）、下半返回 i+1（插其后）；
+        不在任何行上返回 None。"""
+        for i, rf in enumerate(self._rowFrames):
+            try:
+                top = rf.winfo_rooty()
+                bottom = top + rf.winfo_height()
+            except Exception:
+                continue
+            if top <= y_root <= bottom:
+                return i if y_root < (top + bottom) / 2 else i + 1
+        return None
+
+    def _updateDropIndicator(self, y_root: int):
+        """v2.4：在内部 canvas 上画/移插入指示线。
+        为什么画线而不是动态插行让位：插行会触发真实布局重排，与
+        "拖拽期间不重建"的铁律冲突；canvas 画线是纯图层，零副作用。
+        坐标换算：行的屏幕 y - canvas 屏幕顶部 = 视口内偏移，
+        再经 canvasy() 转成 canvas 内容坐标（画出的线随内容滚动）。"""
+        try:
+            canvas = self.listScroll._parent_canvas
+            # 先清旧线
+            self._clearDropLine()
+            target = self._hitTestTarget(y_root)
+            if target is None or not self._rowFrames:
+                return
+            # 线的 y：target 行的顶边；target == n（追加到末尾）→ 最后一行的底边
+            if target < len(self._rowFrames):
+                rf = self._rowFrames[target]
+            else:
+                rf = self._rowFrames[-1]
+                # 底边情形：顶边 + 行高（pady 的 2px 误差视觉可忽略）
+            screen_offset = rf.winfo_rooty() - canvas.winfo_rooty()
+            if target == len(self._rowFrames):
+                screen_offset += rf.winfo_height()
+            cy = canvas.canvasy(screen_offset)
+            self._dropLineId = canvas.create_line(
+                4, cy, canvas.winfo_width() - 4, cy,
+                fill=self.DROP_LINE_COLOR, width=3,
+                       )
+        except Exception:
+            self._dropLineId = None
+
+    def _clearDropLine(self):
+        """删除指示线（防御：canvas 可能已销毁）。"""
+        if self._dropLineId is not None:
+            try:
+                self.listScroll._parent_canvas.delete(self._dropLineId)
+            except Exception:
+                pass
+            self._dropLineId = None
+
+    def _autoScrollTick(self):
+        """拖拽期间的边缘自动滚动（50ms 一拍）。
+        只滚视图不动行 —— 落点在松手时按指针物理位置判定，
+        滚动只是为了让远处的行可见（设计定稿三.5）。
+        v2.4：滚动后重画指示线 —— 指针没动但内容滚了，指针下的行已变，
+        线必须跟随真实落点（_lastMotionY 记录了最后一次指针位置）。"""
+        if not self._dragActive:
+            self._autoScrollJob = None    # 拖拽结束，轮询自然熄火
+            return
+        if self._edgeDirection != 0:
+            try:
+                canvas = self.listScroll._parent_canvas
+                top, _ = canvas.yview()
+                canvas.yview_moveto(
+                    min(max(top + self.SCROLL_STEP * self._edgeDirection, 0.0), 1.0)
+                )
+                self._updateDropIndicator(self._lastMotionY)
+            except Exception:
+                pass
+        self._autoScrollJob = self.after(50, self._autoScrollTick)
+
+    def _onGlobalRelease(self, event):
+        """bind_all 级松开回调：拖拽会话的唯一提交点。"""
+        if not self._dragActive or self._rendering:
+            return
+        self._dragActive = False
+        self._edgeDirection = 0
+        self._clearDropLine()
+
+        # 恢复被拖行视觉。v2 防御：若该行正被编辑（焦点还在它的序号框里），
+        # 保留编辑高亮色而不是熄灭 —— 两种高亮共用一行时的归属仲裁
+        try:
+            color = self.DRAG_COLOR if self._dragIndex == self._focusedRowIndex \
+                else "transparent"
+            self._rowFrames[self._dragIndex].configure(fg_color=color)
+        except Exception:
+            pass
+
+        # 落点判定（与运动画线共用 _hitTestTarget，线到哪手就落到哪）
+        target_index = self._hitTestTarget(event.y_root)
+        if target_index is None:
+            return    # 松在列表区域之外 → 视为取消本次拖拽
+        self._reorder(self._dragIndex, target_index)
+
+    # ────────────────── 收尾 ──────────────────
+
+    def _onReset(self):
+        """重置：恢复打开时快照并重渲染自身，不触碰父窗（设计定稿五.3）。
+        重置后直接「完成」= 零变化，天然等价于"撤销全部"。
+        v2：清掉闪烁标记 —— 旧行号在新列表里无意义。"""
+        self._lastMovedIndex = -1
+        self._workSteps = copy.deepcopy(self._initialOrder)
+        self._renderRows()
+
+    def _finalize(self):
+        """「完成」/ X 关闭的统一收尾：把最终顺序写回父窗。
+        v2：显式提交模型下唯一的宽容点 —— 焦点框里可能还压着未提交的
+        草稿（点「完成」不夺焦点，失焦恢复不会发生），先应用它再写回，
+        保证"看到的数字就是生效的顺序"，不丢用户输入。
+        其余行的草稿在渲染销毁时自然消失（渲染后框里显示的都是实际序号）。"""
+        idx = self._focusedRowIndex
+        if 0 <= idx < len(self._indexEntries):
+            try:
+                if self._indexEntries[idx].winfo_exists():
+                    self._onIndexCommit(self._indexEntries[idx], idx)
+            except Exception:
+                pass
+        try:
+            if self._applyCallback is not None:
+                self._applyCallback(self._workSteps)
+        except Exception:
+            pass    # 父窗已销毁等极端场景：本窗随之销毁，改动自然丢弃
+        self.destroy()
+
+    def destroy(self):
+        """收尾兜底：停自动滚动轮询 / 闪烁任务，删指示线，解除应用级鼠标绑定。
+        本项目没有其他 'all' 级绑定，unbind_all 不会误伤（见 __init__ 注释）。"""
+        self._dragActive = False
+        self._edgeDirection = 0
+        for job_attr in ("_autoScrollJob", "_flashJob"):
+            job = getattr(self, job_attr, None)
+            if job is not None:
+                try:
+                    self.after_cancel(job)
+                except Exception:
+                    pass
+                setattr(self, job_attr, None)
+        self._clearDropLine()
+        try:
+            self.unbind_all("<B1-Motion>")
+            self.unbind_all("<ButtonRelease-1>")
+        except Exception:
+            pass
+        super().destroy()

@@ -331,6 +331,8 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         # 注意：主界面上已经没有全局参数的输入框了，所以不需要再手动 set 那些控件了
         self._updateStepSummary()
 
+
+
     def _buildActionGroupUI(self, presetParams: dict | None = None):
         """
         专门为"动作组"动作构建的特殊 UI
