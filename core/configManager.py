@@ -1,4 +1,6 @@
 '''配置文件和项目路径管理'''
+import sys
+
 import json
 import re
 from pathlib import Path
@@ -12,11 +14,18 @@ from utils.interpreterRegistry import INTERPRETER_REGISTRY
 # .resolve()             → 转为绝对路径
 # .parent                → core/
 # .parent.parent         → 项目根目录
+
+if getattr(sys, "frozen", False):
+    # 打包后：exe 所在目录就是项目根（config 与 exe 并排）
+    proJectrootDirectory = Path(sys.executable).resolve().parent
+else:
+    proJectrootDirectory = Path(__file__).resolve().parent.parent
+
 proJectrootDirectory = Path(__file__).resolve().parent.parent
 configDirectory = proJectrootDirectory / "config"
 globalSettingspath = configDirectory / "Global Settings.json"
-
 currentNumberOfShortcutKeySchemes = theNumberOfTargetFilesInTheFolder(configDirectory)
+
 numberOfNavigationBarItems = currentNumberOfShortcutKeySchemes + 2  # 2表示除了快捷键方案之外，还有首页和设置两个固定导航项
 
 
@@ -24,6 +33,7 @@ def loadThemeFromConfig():
     with open(globalSettingspath, "r", encoding="utf-8") as f:
         globalSettings = json.load(f)
     return globalSettings.get("appearanceMode", "System")  # 从配置文件中读取外观模式，如果没有找到该配置，则默认返回"System"。
+
 
 
 def saveThemeToConfig(choice):
@@ -699,3 +709,16 @@ def center_window(window, width, height):
 
     # 3. 设置窗口大小和位置 (格式: "宽x高+X坐标+Y坐标")
     window.geometry(f"{width}x{height}+{x}+{y}")
+
+def _ensureBareMinimum():
+    """首次运行/配置被删时，补齐最低限度运行条件"""
+    configDirectory.mkdir(exist_ok=True)
+    if not globalSettingspath.exists():
+        saveGlobalSettings({
+            "appearanceMode": "暗",
+            "windowSettings": DEFAULT_WINDOW_SETTINGS,
+            "userBlacklist": "",
+        })
+
+_ensureBareMinimum()
+

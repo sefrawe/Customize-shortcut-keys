@@ -18,7 +18,7 @@ build/
 venv/
 env/
 ENV/
-
+.venv/
 # 日志文件
 *.log
 logs/
@@ -52,6 +52,5 @@ config/*.json
 
 
 CST_Test/
-#!/config/Global Settings.json
-#!/config/Windows系统默认快捷键方案.json
-#!/config/测试快捷键方案.json
+!/config/Windows系统默认快捷键方案.json
+!/config/测试快捷键方案.json

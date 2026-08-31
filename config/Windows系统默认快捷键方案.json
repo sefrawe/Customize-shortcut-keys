@@ -1,0 +1,614 @@
+{
+  "settings": {
+    "name": "Windows系统默认快捷键方案",
+    "description": "包含Windows 11/10系统核心默认快捷键，用于冲突检测分析。此方案快捷键均未绑定动作，都能用是Windows系统在直接监听和执行。\n来源：Microsoft Support官方文档\nhttps://support.microsoft.com/zh-cn/windows/windows-%E7%9A%84%E9%94%AE%E7%9B%98%E5%BF%AB%E6%8D%B7%E6%96%B9%E5%BC%8F-dcc61a57-8ff0-cffe-9796-cb9706c75eec",
+    "startupEnabled": false,
+    "conflictDetectionMode": "仅此方案内",
+    "currentProfileId": 0
+  },
+  "shortcuts": [
+    {
+      "id": 0,
+      "name": "打开开始菜单",
+      "description": "打开或关闭开始菜单",
+      "keyCombination": "cmd",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 1,
+      "name": "打开操作中心",
+      "description": "快速访问常用设置和通知",
+      "keyCombination": "cmd+a",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 2,
+      "name": "打开文件资源管理器",
+      "description": "快速打开文件管理器",
+      "keyCombination": "cmd+e",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 3,
+      "name": "打开设置应用",
+      "description": "打开Windows设置",
+      "keyCombination": "cmd+i",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 4,
+      "name": "锁定计算机",
+      "description": "快速锁定电脑或切换账户",
+      "keyCombination": "cmd+l",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 5,
+      "name": "打开运行对话框",
+      "description": "打开运行命令窗口",
+      "keyCombination": "cmd+r",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 6,
+      "name": "打开搜索功能",
+      "description": "打开Windows搜索",
+      "keyCombination": "cmd+s",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 7,
+      "name": "显示和隐藏桌面",
+      "description": "最小化所有窗口显示桌面，再次按恢复",
+      "keyCombination": "cmd+d",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 8,
+      "name": "打开任务视图",
+      "description": "查看所有打开的窗口和虚拟桌面",
+      "keyCombination": "cmd+tab",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 9,
+      "name": "创建虚拟桌面",
+      "description": "新建一个虚拟桌面",
+      "keyCombination": "cmd+ctrl+d",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 10,
+      "name": "切换虚拟桌面",
+      "description": "在虚拟桌面间向右切换",
+      "keyCombination": "cmd+ctrl+right",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 11,
+      "name": "关闭虚拟桌面",
+      "description": "关闭当前虚拟桌面",
+      "keyCombination": "cmd+ctrl+f4",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 12,
+      "name": "最大化窗口",
+      "description": "将当前窗口最大化",
+      "keyCombination": "cmd+up",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 13,
+      "name": "最小化窗口",
+      "description": "将当前窗口最小化",
+      "keyCombination": "cmd+down",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 14,
+      "name": "窗口贴靠左侧",
+      "description": "将窗口贴靠到屏幕左侧",
+      "keyCombination": "cmd+left",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 15,
+      "name": "窗口贴靠右侧",
+      "description": "将窗口贴靠到屏幕右侧",
+      "keyCombination": "cmd+right",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 16,
+      "name": "打开表情符号面板",
+      "description": "打开表情符号和特殊字符面板",
+      "keyCombination": "cmd+.",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 17,
+      "name": "临时查看桌面",
+      "description": "临时查看桌面，松开后恢复",
+      "keyCombination": "cmd+,",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 18,
+      "name": "打开剪贴板历史记录",
+      "description": "打开剪贴板历史记录面板",
+      "keyCombination": "cmd+v",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 19,
+      "name": "循环浏览通知",
+      "description": "在通知中心循环浏览通知",
+      "keyCombination": "cmd+shift+v",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 20,
+      "name": "打开快速链接菜单",
+      "description": "打开相当于右键开始菜单的快速链接",
+      "keyCombination": "cmd+x",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 21,
+      "name": "切换输入语言",
+      "description": "切换输入语言和键盘布局",
+      "keyCombination": "cmd+space",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 22,
+      "name": "打开放大镜",
+      "description": "打开放大镜工具",
+      "keyCombination": "cmd+=",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 23,
+      "name": "缩小放大镜",
+      "description": "缩小放大镜显示",
+      "keyCombination": "cmd+-",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 24,
+      "name": "打开讲述人",
+      "description": "打开屏幕阅读器",
+      "keyCombination": "cmd+ctrl+enter",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 25,
+      "name": "唤醒设备",
+      "description": "从空白或黑屏唤醒设备",
+      "keyCombination": "cmd+ctrl+shift+b",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 26,
+      "name": "截图到剪贴板",
+      "description": "选择屏幕区域截图到剪贴板",
+      "keyCombination": "cmd+shift+s",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 27,
+      "name": "全屏截图保存",
+      "description": "捕获全屏截图并保存到文件",
+      "keyCombination": "cmd+print_screen",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 28,
+      "name": "打开游戏栏",
+      "description": "打开游戏录制工具栏",
+      "keyCombination": "cmd+g",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 29,
+      "name": "开始听写",
+      "description": "开始语音听写",
+      "keyCombination": "cmd+h",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 30,
+      "name": "打开反馈中心",
+      "description": "打开反馈中心并截图",
+      "keyCombination": "cmd+f",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 31,
+      "name": "打开快速助手",
+      "description": "打开远程协助工具",
+      "keyCombination": "cmd+ctrl+q",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 32,
+      "name": "安全屏幕",
+      "description": "切换到安全屏幕，可锁定、切换用户、打开任务管理器等",
+      "keyCombination": "ctrl+alt+delete",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 33,
+      "name": "打开任务管理器",
+      "description": "直接打开任务管理器",
+      "keyCombination": "ctrl+shift+esc",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 34,
+      "name": "切换应用窗口",
+      "description": "在打开的应用窗口间切换",
+      "keyCombination": "alt+tab",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 35,
+      "name": "关闭活动窗口",
+      "description": "关闭当前活动窗口或退出应用",
+      "keyCombination": "alt+f4",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 36,
+      "name": "显示密码",
+      "description": "在登录屏幕上显示密码",
+      "keyCombination": "alt+f8",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 37,
+      "name": "返回上一级",
+      "description": "在文件资源管理器或浏览器中返回",
+      "keyCombination": "alt+left",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 38,
+      "name": "前进下一级",
+      "description": "在文件资源管理器或浏览器中前进",
+      "keyCombination": "alt+right",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 39,
+      "name": "向上移动一个屏幕",
+      "description": "在文档或页面中向上移动一个屏幕",
+      "keyCombination": "alt+page_up",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 40,
+      "name": "向下移动一个屏幕",
+      "description": "在文档或页面中向下移动一个屏幕",
+      "keyCombination": "alt+page_down",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 41,
+      "name": "复制选定项",
+      "description": "复制选定的文本或项目",
+      "keyCombination": "ctrl+c",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 42,
+      "name": "粘贴选定项",
+      "description": "粘贴剪贴板内容",
+      "keyCombination": "ctrl+v",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 43,
+      "name": "剪切选定项",
+      "description": "剪切选定的文本或项目",
+      "keyCombination": "ctrl+x",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 44,
+      "name": "撤销操作",
+      "description": "撤销上一步操作",
+      "keyCombination": "ctrl+z",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 45,
+      "name": "恢复操作",
+      "description": "恢复撤销的操作",
+      "keyCombination": "ctrl+y",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 46,
+      "name": "选择所有项",
+      "description": "选择当前窗口或文档中的所有项目",
+      "keyCombination": "ctrl+a",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 47,
+      "name": "刷新当前窗口",
+      "description": "刷新活动窗口或页面",
+      "keyCombination": "f5",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 48,
+      "name": "重命名所选项目",
+      "description": "重命名选中的文件或文件夹",
+      "keyCombination": "f2",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 49,
+      "name": "搜索文件或文件夹",
+      "description": "在文件资源管理器中打开搜索",
+      "keyCombination": "f3",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 50,
+      "name": "激活菜单栏",
+      "description": "激活活动应用中的菜单栏",
+      "keyCombination": "f10",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 51,
+      "name": "循环浏览屏幕元素",
+      "description": "在窗口或桌面上的元素间循环切换",
+      "keyCombination": "f6",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 52,
+      "name": "打开开始菜单",
+      "description": "打开开始菜单（替代Windows键）",
+      "keyCombination": "ctrl+esc",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 53,
+      "name": "切换键盘布局",
+      "description": "在多个键盘布局间切换",
+      "keyCombination": "ctrl+shift",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 54,
+      "name": "打开/关闭输入法",
+      "description": "启用或禁用中文输入法编辑器",
+      "keyCombination": "ctrl+space",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 55,
+      "name": "显示快捷菜单",
+      "description": "显示选定项目的上下文菜单",
+      "keyCombination": "shift+f10",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 56,
+      "name": "永久删除",
+      "description": "永久删除选定项，不进入回收站",
+      "keyCombination": "shift+delete",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 57,
+      "name": "打开上下文菜单",
+      "description": "打开活动窗口的快捷菜单",
+      "keyCombination": "alt+space",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 58,
+      "name": "显示所选项目属性",
+      "description": "打开选定项目的属性对话框",
+      "keyCombination": "alt+enter",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 59,
+      "name": "选择地址栏",
+      "description": "在文件资源管理器中选择地址栏",
+      "keyCombination": "alt+d",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 60,
+      "name": "打开新窗口",
+      "description": "在文件资源管理器中打开新窗口",
+      "keyCombination": "ctrl+n",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 61,
+      "name": "关闭活动窗口",
+      "description": "关闭当前活动窗口或选项卡",
+      "keyCombination": "ctrl+w",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 62,
+      "name": "新建文件夹",
+      "description": "在文件资源管理器中新建文件夹",
+      "keyCombination": "ctrl+shift+n",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 63,
+      "name": "更改视图样式",
+      "description": "更改文件资源管理器视图样式",
+      "keyCombination": "ctrl+shift+1",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 64,
+      "name": "展开所有文件夹",
+      "description": "展开导航窗格中所有文件夹",
+      "keyCombination": "ctrl+shift+e",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 65,
+      "name": "选择搜索框",
+      "description": "在文件资源管理器中选择搜索框",
+      "keyCombination": "ctrl+e",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    },
+    {
+      "id": 66,
+      "name": "最大化/最小化窗口",
+      "description": "在文件资源管理器中最大化或最小化活动窗口",
+      "keyCombination": "f11",
+      "action": "",
+      "actionParams": {},
+      "enabled": true
+    }
+  ]
+}
