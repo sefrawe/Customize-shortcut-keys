@@ -35,6 +35,12 @@ class MainWindow(ctk.CTk):
         self.executor = executor
 
         self.conflict_reports_cache = {}
+        # "退出软件已成定局"的单向标志。quit_app 通过全部守卫（忙碌 / 模态
+        # 确认）后置 True，此后的销毁级联里任何"恢复监听"的兜底都应让路
+        # （读者：ShortcutEditWindow._onEditWindowDestroy，沿 master 链
+        # 上溯读取本标志，同 _getExecutor 的先例）。
+        # 写入点仅 quit_app 一处；读取点一律 getattr 防御，不依赖初始化时序。
+        self._quitting = False
 
         # ==================== 34 号修改：is_listening_paused 改为只读 property ==
         # 原实例属性 self.is_listening_paused = False 一行【必须删除】：
@@ -613,6 +619,52 @@ class MainWindow(ctk.CTk):
                 "动作组正在执行中，无法退出软件！\n请先用停止组合 / 托盘 / 设置页停止动作组。",
             )
             return
+        # ==================== 27 号新增：模态编辑窗守卫（弹一次确认）========
+        # 背景：编辑快捷键窗 / 动作组编辑窗 / 步骤参数窗 / 延迟窗 / 排序窗
+        # 都是 grab_set() 模态窗，里面是尚未写回配置文件的修改。直接退出
+        # 会连带销毁它们 = 未保存修改静默丢失。与上面忙碌守卫同构、分级
+        # 不同：忙碌 = 硬性禁止（执行期状态不可破坏）；编辑中 = 知情确认
+        # 后放行。全部退出入口（托盘 / 设置页 / appControl 指令）都经过
+        # 本方法，守卫做在这里一处全覆盖。
+        #
+        # 为什么用 grab_current() 检测而不是登记表 / 遍历 children：
+        # - Tk 保证同一时刻至多一个窗口持有 grab（后 grab 者顶替前者），
+        #   grab_current() 返回的正是当前模态链最顶端的那个窗口；
+        # - 零登记零侵入：所有模态窗统一 grab_set，一处判断全覆盖，
+        #   未来新增模态窗自动纳入（登记表模式必然重演"忘了注册"的坑）；
+        # - 非模态的搜索窗口没有 grab，天然不会误报。
+        #
+        # 已知边界：原生 MessageBox 不受 Tk grab 影响（编辑窗 onSave 的
+        # "格式不合法"askyesno 在 grab 持有期间同样正常弹出，先例已在）。
+        grabber = self.grab_current()
+        if grabber is not None:
+            confirm = messagebox.askyesno(
+                "退出确认",
+                "检测到编辑窗口打开中，未保存的修改将会丢失。\n确定要退出软件吗？",
+            )
+            if not confirm:
+                return  # 用户取消：一切照旧，编辑窗保持原样（仍模态）
+
+        # ==================== 27 号新增：立"退出中"标志 ======================
+        # 必须在两条守卫全部通过之后、销毁任何窗口之前立：忙碌守卫拦下时
+        # 软件还要继续跑，若提前立标志，此后用户正常关闭编辑窗会跳过
+        # executor.start()，监听器被永久卡死。守卫通过 = 退出已成定局。
+        self._quitting = True
+
+        # 用户已确认退出 → 先销毁模态窗再走下方正常退出链：
+        # ① grab 随窗口销毁自动释放，无需手动 grab_release；
+        # ② 各级 wait_window 的等待条件就地满足，悬挂的编辑流程
+        #    （openActionGroupEditor 等）随销毁级联自然收尾，配合
+        #    _updateStepSummary 的护栏把退出竞态 traceback 压到零；
+        # ③ 若动作组编辑窗正在试运行，其 destroy 覆写会先给播放器线程
+        #    发停止信号 —— 鼠标先停住，再走销毁，行为正确。
+        if grabber is not None:
+            try:
+                grabber.destroy()
+            except Exception:
+                pass  # 已销毁等极端场景：以退出流程为重，静默继续
+        # ==================================================================
+
         # ==================== 34 号新增：停掉托盘状态签名轮询 ==================
         # 回调本体 widget-free、异常全兜底，理论上留着也无害（mainloop 退出
         # 即亡），但显式取消更干净——与 SettingsPage.destroy 的 after_cancel

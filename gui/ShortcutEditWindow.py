@@ -413,9 +413,22 @@ class ShortcutEditWindow(ctk.CTkToplevel):
 
     def _updateStepSummary(self):
         """v8：更新步骤概览文本框（层级缩进 + 每步分隔线）"""
-        if not hasattr(self, "stepSummaryTextbox") or not self.stepSummaryTextbox.winfo_exists():
+        # 场景：动作组编辑窗开着时托盘退出软件 → quit_app 的销毁级联拆掉
+        # 全部窗口 → 本窗的 wait_window(editor) 条件满足返回 →
+        # openActionGroupEditor 继续执行走到这里。此刻应用（Tcl 解释器）
+        # 已被销毁，任何 Tk 调用——包括 winfo_exists 本身——都会抛
+        # "application has been destroyed"；旧写法把 winfo_exists 放在
+        # or 链里恰好踩中，退出能完成但打印一整段无害 traceback。
+        # 拆成两步 + try 兜底：退出路径静默返回，正常路径行为零变化。
+        if not hasattr(self, "stepSummaryTextbox"):
             return
-
+        try:
+            if not self.stepSummaryTextbox.winfo_exists():
+                return
+        except Exception:
+            # 应用已销毁 / 控件已拆毁：正常使用不会走到这里，只有退出
+            # 竞态会。以退出流程为重，静默跳过本次概览刷新。
+            return
         self.stepSummaryTextbox.configure(state="normal")
         self.stepSummaryTextbox.delete("1.0", "end")
 
@@ -913,6 +926,22 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         """
         if event.widget is not self:
             return  # 子控件的销毁事件，不归我管
+        # "退出软件"引发的级联销毁同样会走到这里。此时 quit_app 已置
+        # _quitting 标志并（将要）executor.stop()，而下方 stop_*_capture
+        # 的 finally 里 executor.start() 会把监听器复活 —— 兜底函数是为
+        # "误关编辑窗"设计的，退出场景方向正好相反。
+        # 判据：沿 master 链向上找 MainWindow 的 _quitting 标志（上溯先例
+        # 与层数上限：ActionGroupEditorWindow._getExecutor）。找到 =
+        # 退出中 → 整个兜底跳过：本地捕获监听器是 daemon 线程，随进程
+        # 退出自然消亡，无需也不应该恢复任何东西。
+        widget = self.master
+        for _ in range(10):
+            if widget is None:
+                break
+            if getattr(widget, "_quitting", False):
+                return
+            widget = getattr(widget, "master", None)
+
         if getattr(self, "_keycap_active", False):
             self.stop_key_capture()
         # 坐标捕获同款隐患顺手补漏（不改其内部逻辑，只借销毁时机拉闸）
