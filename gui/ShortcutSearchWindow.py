@@ -2,6 +2,7 @@
 
 from core.configManager import loadWindowSettings, center_window
 from utils.actionRegistry import getAllActionDisplayNames, getActionDefByDisplayName, getActionDefByKey, ParamSpec
+from utils.appIcon import applyAppIcon
 from utils.shortcutUtils import normalize_key_combination
 
 import customtkinter as ctk
@@ -86,6 +87,7 @@ class ShortcutSearchWindow(ctk.CTkToplevel):
 
         # 初始化时不执行搜索，显示提示信息
         self._show_initial_message()
+        applyAppIcon(self)
 
     def _show_initial_message(self):
         """显示初始提示信息"""

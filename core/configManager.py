@@ -7,6 +7,7 @@ from tkinter import messagebox
 from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, checkForDuplicateShortcutSchemeNames, \
     getShortcutSchemesNames, getShortcutSchemeConfigBySchemeName, getShortcutSchemeConfigById
 
+from utils.interpreterRegistry import INTERPRETER_REGISTRY
 # Path(__file__)         → core/config_manager.py
 # .resolve()             → 转为绝对路径
 # .parent                → core/
@@ -382,69 +383,263 @@ def changeShortcutSchemeConfig_conflictDetectionMode(schemeName, newMode):
     config["settings"]["conflictDetectionMode"] = newMode
     saveShortcutSchemeConfig(config, schemeName)
 
+# ==================== 15 号：用户黑名单管理（解析单点化改造区）====================
+#
+# 【改造动机】
+# 改造前，"文本 → 字典"的解析逻辑存在两份副本（本文件 loadUserBlacklist
+# 与 gui/SettingsPage.saveCustomBlacklist 各一份），且都患同一个病：
+# 非法行【静默丢弃】——用户写错一行，保存提示照样"✅ 已保存"，
+# 实际那行已经无声消失。对安全功能而言，"用户以为有保护、实际没有"
+# 是最大的坑。
+#
+# 【改造内容】
+# 1. 解析与序列化收敛为唯一真相源：
+#    · parseBlacklistText  : 文本 → (字典, 丢弃级问题, 警告级问题)
+#    · formatBlacklistDict : 字典 → 文本（保存写入与 UI 回显共用）
+#    消费方：UI 保存（SettingsPage，把问题现形给用户）、
+#            加载（loadUserBlacklist，问题仅控制台日志）。
+#    从此格式定义只活在这一个文件里，与它的序列化器同处一室，
+#    不可能出现"两份解析器各自漂移"。
+# 2. 顺带修复真 bug：解释器名大小写导致黑名单整体失效——旧解析把
+#    "[CMD]" 存成键 "CMD"，而匹配端（doCustomCommand）查的键是
+#    spec.name（恒小写 "cmd"），永不命中。现在解析时统一 lower，
+#    三条路径（UI 保存 / 加载 / 手改 JSON）同时治愈。修复只会扩大
+#    保护面，绝不会让原本生效的条目失效。
+# 3. 语法检查不做在输入过程（定稿 B7：违背工具短平快定位），只在
+#    保存时跑一次解析器拿问题报告，呈现方式由 SettingsPage 决定。
+#
+# 【与旧实现的判定差异（唯一一处，属修复而非回归）】
+# 旧正则 ^\[(.+?)\]\s*(.+)$ 对 "[ ] format" 这类行也能匹配
+# （group1=" "），strip 后存成键 ""——永不命中任何 spec.name，
+# 还会原样写回 JSON 成为永久死数据。新实现将其归入丢弃级。
+# 其余所有旧行为（覆盖语义、注释跳过、关键词滤空）零变化。
 
-# ==================== 用户黑名单管理 ====================
+# 合法解释器名集合：从注册表实时提取（单点）。未来注册表新增解释器
+# 时，语法检查的识别名单自动跟随，不需要维护第二份名单。
+# 注：集合里含 "unknown"（getInterpreterSpec 路径未识别时的兜底规格
+# 名）。技术上 "[unknown] xxx" 会真的生效（匹配端查得到它），但属于
+# 实现细节外溢——定稿拍板：照样警告 + 文案附注，见解析管线第 4 步。
+_KNOWN_INTERPRETER_NAMES = {spec.name for spec in INTERPRETER_REGISTRY}
+
+# 提示用名单：排除 unknown——它不是用户应该填的"可用解释器"，
+# 列进提示会误导用户真的去写 [unknown]。
+_HINT_INTERPRETERS = sorted(
+    n for n in _KNOWN_INTERPRETER_NAMES if n != "unknown"
+)
+
+# 全角标点检测集合：关键词里出现这些，几乎必然是输入法没切回来。
+# 典型事故："format，diskpart"（全角逗号）不会被英文逗号分割，整串
+# 变成一个关键词，子串匹配几乎永不命中——隐形失效的经典样本。
+# 全角空格不在此列：Python 的 strip() 与 \s 都认 \u3000，作分隔符
+# 无实害，警告它属于误报。
+_FULLWIDTH_PUNCT = "，、；：（）"
+
+
+def parseBlacklistText(raw_text: str):
+    """
+    用户黑名单文本格式解析器（15 号新增，唯一真相源）。
+
+    输入格式（每行）：
+        [解释器名] 关键词1, 关键词2
+        空行与 # 开头的行视为注释/空白，静默跳过（合法语法，不算问题）
+
+    返回值三元组：
+        blacklist_dict: dict
+            解析成功的黑名单。键已 lower 归一化（治 [CMD] 永不命中的
+            真 bug）；值保留关键词原大小写——匹配端 keyword.lower()
+            本就大小写免疫，保留书写形态对用户更友好（PowerShell 的
+            PascalCase 惯例不破坏）。
+        drops: list[tuple[int, str, str]]
+            【丢弃级】问题列表，元素为 (行号, 原因, 原始行)。
+            丢弃级行不进字典——丢弃本身与旧行为一致（旧的是静默丢），
+            差别是现在现形，由调用方决定呈现（SettingsPage 弹确认、
+            loadUserBlacklist 打日志）。
+        warns: list[str]
+            【警告级】文案列表（已含行号）。警告级行照常进字典，
+            仅提示用户可能写错了。
+
+    设计纪律：
+    - 一次收集全部问题再返回（keyValidator "省得用户来回试错"同款
+      思路），不做逐行 fail-fast；
+    - 静默跳过（空行/注释）不算问题——它们本来就是合法语法；
+    - 与 keyValidator 的"默认拒 + 强制保存逃生口"方向相反：这里
+      默认保（部分行无效不影响其余行），全丢时才要求用户确认——
+      因为静默才是病，丢弃本身是合理行为。
+    """
+    blacklist_dict: dict[str, list[str]] = {}
+    drops: list[tuple[int, str, str]] = []
+    warns: list[str] = []
+
+    # 已见解释器名集合，用于"多行同解释器"警告。
+    # （旧实现的隐含行为：同解释器出现多行时后者覆盖前者，数据无声
+    # 丢失。本轮保持覆盖语义零行为变化，仅让它现形为警告。）
+    seen_interpreters: set[str] = set()
+
+    for lineno, raw_line in enumerate(raw_text.split('\n'), start=1):
+        line = raw_line.strip()
+
+        # ── 第0步：空白与注释 → 合法语法，静默跳过（不计问题）──
+        if not line or line.startswith('#'):
+            continue
+
+        # ── 第1步：结构识别 ──
+        # 正则比旧版拆成两段语义：^\[(.*?)\] 认结构、(.*)$ 收剩余。
+        # 好处是错误文案各归各位：
+        #   "cmd format"   → 不匹配 → "缺少 [解释器名] 前缀"
+        #   "【cmd】format" → 不匹配（全角括号）→ 同上
+        #   "[cmd]"        → 匹配但剩余为空 → "没有任何有效关键词"
+        #   （旧正则会把 "[cmd]" 误报成"缺少前缀"，文案与实情不符）
+        match = re.match(r'^\[(.*?)\](.*)$', line)
+        if not match:
+            drops.append((lineno, "缺少 [解释器名] 前缀", line))
+            continue
+
+        interpreter = match.group(1).strip()
+        keywords_str = match.group(2).strip()
+
+        # ── 第2步：解释器名不能为空 ──
+        # 旧实现会把这种行存成键 ""——永不命中任何 spec.name，还会
+        # 原样写回 JSON 成为永久死数据（本轮唯一的行为差异点，修复）。
+        if not interpreter:
+            drops.append((lineno, "[ ] 内解释器名为空", line))
+            continue
+
+        # ── 第3步：关键词不能全空 ──
+        # [cmd] 或 [cmd] , , 这类行，旧实现因 if keywords 不成立而
+        # 静默消失，现形为丢弃级。
+        keywords = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
+        if not keywords:
+            drops.append((lineno, "方括号后没有任何有效关键词", line))
+            continue
+
+        # ── 归一化：解释器名 lower（真 bug 修复点）──
+        # 匹配端查的是 spec.name（恒小写），键不 lower 永不命中。
+        interpreter_lower = interpreter.lower()
+
+        # ── 第4步（警告级）：解释器名不在注册表 ──
+        # 拼写错误（cmds→cmd）保存不报错就永远不命中，必须现形。
+        # unknown 特例照样警告，附一句兜底说明（定稿拍板第 3 项）。
+        if interpreter_lower not in _KNOWN_INTERPRETER_NAMES:
+            hint = " / ".join(_HINT_INTERPRETERS)
+            text = (f"第 {lineno} 行：解释器名 '{interpreter}' 不在支持列表"
+                    f"（可用：{hint}）")
+            if interpreter_lower == "unknown":
+                text += "（unknown 是路径未识别时的兜底解释器，一般无需专门配置）"
+            warns.append(text)
+
+        # ── 第5步（警告级）：关键词含全角标点 ──
+        # 只检查关键词内部。全角逗号作分隔符是最常见的输入法事故：
+        # "format，diskpart" 被当成一个关键词，子串匹配几乎永不命中。
+        for kw in keywords:
+            hit = [ch for ch in _FULLWIDTH_PUNCT if ch in kw]
+            if hit:
+                warns.append(
+                    f"第 {lineno} 行：关键词 '{kw}' 含全角标点"
+                    f"（{''.join(hit)}）——若本意是分隔多个关键词，"
+                    f"请改用英文逗号"
+                )
+
+        # ── 第6步（警告级）：同行重复关键词 → 去重 + 提示 ──
+        # 大小写不敏感判重（format/FORMAT 语义相同），保留首个书写
+        # 形态（定稿拍板第 4 项）。判重用小写副本，收集重复形态用于
+        # 展示，原文形态重复（format, format）只展示一次。
+        deduped: list[str] = []
+        seen_kw_lower: set[str] = set()
+        duplicated: list[str] = []
+        for kw in keywords:
+            kw_lower = kw.lower()
+            if kw_lower in seen_kw_lower:
+                if kw not in duplicated:
+                    duplicated.append(kw)
+                continue
+            seen_kw_lower.add(kw_lower)
+            deduped.append(kw)
+        if duplicated:
+            warns.append(
+                f"第 {lineno} 行：重复关键词 {'、'.join(duplicated)}"
+                f"（已自动去重）"
+            )
+
+        # ── 第7步（警告级）：多行同解释器 → 保持覆盖语义 + 现形 ──
+        # 旧实现后行覆盖前行、数据无声丢失。本轮行为不变（覆盖），
+        # 仅补警告。"仅最后一行生效"的措辞在任意行都准确（解析时
+        # 不知道后面还有没有同名行，用结果性描述避开时序问题）。
+        if interpreter_lower in seen_interpreters:
+            warns.append(
+                f"第 {lineno} 行：解释器 [{interpreter_lower}] 出现多次，"
+                f"仅最后一行生效"
+            )
+        seen_interpreters.add(interpreter_lower)
+
+        # ── 落库（警告级行照常进字典）──
+        blacklist_dict[interpreter_lower] = deduped
+
+    return blacklist_dict, drops, warns
+
+
+def formatBlacklistDict(blacklist: dict) -> str:
+    """
+    用户黑名单字典 → 文本格式序列化器（15 号新增，唯一真相源）。
+    供 saveUserBlacklist（写 JSON）与 SettingsPage._loadCustomBlacklist
+    （UI 回显）共用——回显的就是实际存储格式，归一化成果（解释器名
+    lower、去重）会自然"回写"到用户视野（验收项 B14）。
+    """
+    lines = []
+    for interpreter, keywords in blacklist.items():
+        if keywords:  # 只序列化有关键词的解释器（与旧实现等价）
+            keywords_str = ", ".join(keywords)
+            lines.append(f"[{interpreter}] {keywords_str}")
+    return "\n".join(lines)
+
 
 def loadUserBlacklist():
     """
     从 Global Settings.json 读取用户自定义黑名单（文本格式）。
-    
-    返回值：dict，如 {"cmd": ["format", "diskpart"], "powershell": ["Format-Volume", "Remove-Item"]}
+    返回值：dict，如 {"cmd": ["format", "diskpart"], ...}
     如果配置文件中没有该字段，返回空字典（向后兼容）。
+
+    15 号改造：解析逻辑平移至 parseBlacklistText（单点），本函数
+    签名与返回值不变——doCustomCommand 的匹配路径零感知。加载路径
+    的丢弃/警告仅控制台 print（本函数可能运行在任意上下文，弹窗
+    既不合适也不必要；UI 校验只服务保存路径，定稿"不做清单"第 3 条）。
+    但解释器名 lower 归一化在本路径同样生效——真 bug 修复的三条
+    路径之一（手改 JSON 写 [CMD] 也能被治愈，验收项 C2）。
     """
     with open(globalSettingspath, "r", encoding="utf-8") as f:
         globalSettings = json.load(f)
-    
-    # 读取原始文本格式
+
     raw_text = globalSettings.get("userBlacklist", "")
     if not raw_text.strip():
         return {}
 
-    # 解析文本格式为字典
-    blacklist_dict = {}
-    for line in raw_text.split('\n'):
-        line = line.strip()
-        if not line or line.startswith('#'):  # 跳过空行和注释
-            continue
-            
-        # 匹配 [解释器名] 关键词1, 关键词2 格式
-        match = re.match(r'^\[(.+?)\]\s*(.+)$', line)
-        if match:
-            interpreter = match.group(1).strip()
-            keywords_str = match.group(2).strip()
-            # 分割关键词，去除空格
-            keywords = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
-            if keywords:
-                blacklist_dict[interpreter] = keywords
-    
+    blacklist_dict, drops, warns = parseBlacklistText(raw_text)
+
+    # 手改 JSON 的存量脏数据在此现形（仅日志，静默容错现状保留）
+    for lineno, reason, raw in drops:
+        print(f"[黑名单加载] 第 {lineno} 行无法解析已跳过（{reason}）: {raw}")
+    for w in warns:
+        print(f"[黑名单加载] 警告: {w}")
+
     return blacklist_dict
 
 
 def saveUserBlacklist(blacklist: dict):
     """
-    将用户自定义黑名单字典转换为文本格式，写入 Global Settings.json。
-    
-    参数：
-        blacklist: 字典，如 {"cmd": ["format", "diskpart"], "powershell": ["Format-Volume", "Remove-Item"]}
-    """
-    with open(globalSettingspath, "r", encoding="utf-8") as f:
-        globalSettings = json.load(f)
-    
-    # 将字典转换为文本格式
-    lines = []
-    for interpreter, keywords in blacklist.items():
-        if keywords:  # 只保存有关键词的解释器
-            keywords_str = ", ".join(keywords)
-            lines.append(f"[{interpreter}] {keywords_str}")
-    
-    # 合并空行和注释（如果有的话）
-    globalSettings["userBlacklist"] = "\n".join(lines)
-    
-    # 保存
-    f.seek(0)
-    json.dump(globalSettings, f, ensure_ascii=False, indent=2)
-    f.truncate()
+    将用户自定义黑名单字典写入 Global Settings.json。
 
+    15 号改造：文本序列化收敛至 formatBlacklistDict（单点）。
+    参数：
+        blacklist: 字典，如 {"cmd": ["format", "diskpart"], ...}
+    """
+    with open(globalSettingspath, "r+", encoding="utf-8") as f:
+        globalSettings = json.load(f)
+
+        globalSettings["userBlacklist"] = formatBlacklistDict(blacklist)
+
+        # 保存（r+ 写回三件套：seek 归零 → 覆盖写 → truncate 防残留）
+        f.seek(0)
+        json.dump(globalSettings, f, ensure_ascii=False, indent=2)
+        f.truncate()
 
 # ==================== 窗口大小设置管理 ====================
 

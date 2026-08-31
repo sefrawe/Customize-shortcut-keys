@@ -1,4 +1,6 @@
 ''' 编辑快捷键弹窗 '''
+from utils.appIcon import applyAppIcon
+
 ''' 
 # ==============================
 # 数据驱动的动作编辑系统架构说明
@@ -221,6 +223,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         # 细节：<Destroy> 会对每个子控件各触发一次，必须用 event.widget is self
         # 过滤，只在"本窗口自身"销毁时执行一次兜底。
         self.bind("<Destroy>", self._onEditWindowDestroy)
+        applyAppIcon(self)
 
 
     def _buildParamWidget(self, spec, initialValue):

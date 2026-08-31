@@ -10,6 +10,8 @@ from utils.actionGroupExecutor import ActionGroupPlayer
 from utils.actionRegistry import ACTION_REGISTRY, getActionDefByKey, getActionDefByDisplayName
 
 from core.configManager import loadWindowSettings, center_window
+from utils.appIcon import applyAppIcon
+
 
 class ActionGroupEditorWindow(ctk.CTkToplevel):
     def __init__(self, parent, steps_data_full):
@@ -162,6 +164,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self.stopOnErrorOpt.configure(command=self._calculateEstimatedTime)
         self.loopCountEntry.bind("<KeyRelease>", lambda e: self._calculateEstimatedTime())
         self.maxExecEntry.bind("<KeyRelease>", lambda e: self._calculateEstimatedTime())
+        applyAppIcon(self)
 
     def destroy(self):
         """窗口销毁前的兜底：试运行还在跑就先发停止信号（31 号新增）。
@@ -1029,6 +1032,7 @@ class DelayEditorWindow(ctk.CTkToplevel):
 
         ctk.CTkButton(self, text="保存", command=self.onSave).grid(row=3, column=0, columnspan=2, pady=10)
 
+        applyAppIcon(self)
     def onSave(self):
         ui_val = self.typeOpt.get()
         # 反向映射回底层英文标识符
@@ -1089,6 +1093,7 @@ class StepParamEditorWindow(ctk.CTkToplevel):
         btnFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
         ctk.CTkButton(btnFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="right", padx=5)
         ctk.CTkButton(btnFrame, text="保存", command=self.onSave).pack(side="right", padx=5)
+        applyAppIcon(self)
 
     def _buildParamWidget(self, spec, initialValue):
         """根据规格生成具体的控件"""
@@ -1224,6 +1229,7 @@ class ReorderStepsWindow(ctk.CTkToplevel):
         self.bind("<Return>", self._onEnterKey)
         # X 关闭键与「完成」同一条 finalize（设计定稿五.4）
         self.protocol("WM_DELETE_WINDOW", self._finalize)
+        applyAppIcon(self)
 
     # ────────────────── UI 构建 ──────────────────
 

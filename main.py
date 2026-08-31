@@ -44,6 +44,16 @@ def check_single_instance():
     return True
 
 def main():
+    # Windows 任务栏按 AppUserModelID 归组图标。不设置时，脚本的进程身份
+    # 就是 python.exe，任务栏永远显示 Python 图标——即使窗口 iconbitmap
+    # 已经设置成功。显式声明独立 ID 后，任务栏才改用窗口自身的图标。
+    # 必须在创建任何窗口之前调用（进程级一次性设置）。
+    if platform.system() == "Windows":
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                "CustomShortcutKeys.App")
+        except Exception:
+            pass  # 声明失败只影响任务栏图标归属，不阻塞启动
     # ===== 新增：单实例检测 =====
     if not check_single_instance():
         # ==================== 34 号新增：静默启动撞单例不弹窗 ==================

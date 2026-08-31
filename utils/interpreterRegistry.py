@@ -1,6 +1,6 @@
 ''' 解释器特征注册表：数据驱动模式管理不同 Shell 的执行参数 '''
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 @dataclass
 class InterpreterSpec:

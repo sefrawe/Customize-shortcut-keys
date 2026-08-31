@@ -1,7 +1,7 @@
 '''
 主窗口
 '''
-
+import os
 import json
 from tkinter import messagebox
 
@@ -66,6 +66,20 @@ class MainWindow(ctk.CTk):
         self.protocol("WM_DELETE_WINDOW", self.hide_window)
 
         self.title("自定义快捷键工具")
+
+        # 路径必须用绝对路径：iconbitmap 解析相对路径时基于"当前工作目录"
+        # 而不是脚本目录——从快捷方式/其他目录启动软件时 CWD 不可控，
+        # 相对路径会静默失效。用 __file__ 反推项目根，与 configDirectory
+        # 同款思路。
+        # 用 CTk 自带的 iconbitmap（传 .ico 字符串）：CTk 会存住路径并在
+        # 外观模式切换等时机自动重设；不要用 tk 的 iconphoto（CTk 不维护，
+        # 会被它的默认图标覆盖回去）。
+
+        _icon_path = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),"icon.ico")
+        if os.path.exists(_icon_path):
+            self.iconbitmap(_icon_path)
+
         # 固定主窗口的最小尺寸，防止用户在设置里填了过小的值导致 UI 崩溃
         self.minsize(1000, 800)
 

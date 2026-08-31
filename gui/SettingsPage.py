@@ -1,19 +1,21 @@
 """ 设置页面 """
-import re
+from utils.interpreterRegistry import INTERPRETER_REGISTRY
+from utils.systemUtils import set_auto_start, is_auto_start_enabled
+
+# 顶部 import re 一行【删除】——re 只被旧版 saveCustomBlacklist 使用，
+# 解析已下沉 configManager，留着是死导入（改动 2.6 后无任何使用点）。
 from tkinter import messagebox
-
 import customtkinter as ctk
-
 from core.configManager import (
     loadThemeFromConfig,
     saveThemeToConfig,
     loadUserBlacklist,
     saveUserBlacklist,
+    parseBlacklistText,      # 15 号新增：黑名单文本解析器（唯一真相源）
+    formatBlacklistDict,     # 15 号新增：黑名单字典序列化器（回显共用）
     loadWindowSettings,
     saveWindowSettings,
 )
-from utils.interpreterRegistry import INTERPRETER_REGISTRY
-from utils.systemUtils import set_auto_start, is_auto_start_enabled
 
 
 # "监听/执行"状态文案的计算分支收敛到 utils/statusText，与托盘状态行
@@ -26,7 +28,12 @@ from utils.statusText import getListenStatus, getExecStatus
 # 仅存的组合串副本（换键时若忘改必与监听端漂移），本轮一并清偿。
 from utils.reservedCombos import kindToComboStr, STOP_KIND_HARD, STOP_KIND_SOFT
 
+# ==================== 15 号：状态行自动清除时长（两档，定稿拍板）========
+_STATUS_CLEAR_QUICK_MS = 3000   # 净成功：无丢弃、无警告、保存无异常
+_STATUS_CLEAR_LONG_MS = 10000   # 其余：确认跳过 / 有警告 / 保存失败
+
 class SettingsPage(ctk.CTkFrame):
+
     def __init__(self, master, main_window=None, **kwargs):
         super().__init__(master, **kwargs)
         # ==================== 32 号新增：主窗口引用注入 ====================
@@ -38,6 +45,12 @@ class SettingsPage(ctk.CTkFrame):
         # 轮询定时器 ID 占位（destroy 时取消）
         self._poll_after_id = None
         # ================================================================
+
+        # 15 号：两个状态行的自动清除定时器 ID 占位（destroy 时取消）。
+        # 两个定时器完全独立：黑名单保存不动 winSize 提示，反之亦然。
+        self._blacklistClearAfterId = None
+        self._winSizeClearAfterId = None
+
 
         # ── 页面整体布局：单个滚动容器撑满 ──
         self.grid_columnconfigure(0, weight=1)
@@ -293,10 +306,11 @@ class SettingsPage(ctk.CTkFrame):
             text=(
                 "• 每行格式：[解释器名] 关键词1, 关键词2\n"
                 "• 例如：[cmd] format, diskpart\n"
-                "• 不区分大小写（如输入 'del' 会匹配 'DEL'）\n"
+                "• 解释器名与关键词都不区分大小写（[CMD] 等价 [cmd]）\n"
                 "• 子串包含匹配（如输入 'ping' 会匹配 'ping 127.0.0.1'）\n"
-                "• 自动去除每行首尾空格，过滤空行\n"
-                "• 修改后需点击「保存自定义黑名单」按钮生效"
+                "• 自动去除每行首尾空格；空行与 # 开头的行视为注释\n"
+                "• 无法解析的行保存时会提示确认后丢弃；重复关键词自动去重\n"
+                "• 修改后需点击「保存自定义黑名单」按钮生效；保存的提示几秒后自动消失"
             ),
             font=("微软雅黑", 12),
             text_color="gray",
@@ -422,18 +436,20 @@ class SettingsPage(ctk.CTkFrame):
         self.main_window.quit_app()  # 忙碌守卫在 quit_app 内
 
     def destroy(self):
-        """页面销毁时取消状态轮询（32 号设计定稿要求）。
-
-        不取消的话：最后一次排期的 after 回调会在控件销毁后触发，
-        winfo_exists 虽能防御，但显式取消更干净（不依赖防御）。
-        """
-        if getattr(self, "_poll_after_id", None) is not None:
-            try:
-                self.after_cancel(self._poll_after_id)
-            except Exception:
-                pass
-            self._poll_after_id = None
+        """页面销毁时取消状态轮询（32 号纪律）+ 15 号新增的两个状态行
+        清除定时器。不取消的话：最后一次排期的 after 回调会在控件销毁
+        后触发，winfo_exists 守卫虽能防御，但显式取消更干净（不依赖
+        防御）——三个槽位统一走同一段取消逻辑。"""
+        for attr in ("_poll_after_id", "_blacklistClearAfterId", "_winSizeClearAfterId"):
+            after_id = getattr(self, attr, None)
+            if after_id is not None:
+                try:
+                    self.after_cancel(after_id)
+                except Exception:
+                    pass
+                setattr(self, attr, None)
         super().destroy()
+
     # =======================================================================
 
 
@@ -461,44 +477,167 @@ class SettingsPage(ctk.CTkFrame):
         self.forcedBlacklistTextbox.insert("1.0", text)
         self.forcedBlacklistTextbox.configure(state="disabled")
 
-    def _loadCustomBlacklist(self):
-        """从 Global Settings.json 读取用户自定义黑名单，转换为文本格式显示"""
-        blacklist_dict = loadUserBlacklist()
-        # 将字典转换为文本格式
+    # ==================== 15 号新增：状态行统一清除机制 ====================
+
+    def _showStatusAndScheduleClear(self, label, attr_name: str,
+                                    text: str, color: str, duration_ms: int):
+        """
+        统一的状态行显示 + 定时清除（黑名单 / winSize 两个标签共用）。
+
+        纪律一（先 cancel 后排新）：连续两次保存时，若不取消第一次的
+        定时器，它会把第二次的提示提前清掉——提示刚显示即消失（验收
+        项 A5）。cancel 对已触发/不存在的 ID 是安全的（Tcl after cancel
+        对未知 ID 静默忽略），外层 try 兜底属项目惯例防御。
+
+        纪律二（独立定时器）：attr_name 区分两个标签各自的定时器槽位，
+        黑名单与 winSize 互不干扰（验收项 A6）。
+        """
+        label.configure(text=text, text_color=color)
+
+        old_id = getattr(self, attr_name, None)
+        if old_id is not None:
+            try:
+                self.after_cancel(old_id)
+            except Exception:
+                pass
+
+        def _clear():
+            # winfo_exists 守卫 + try 兜底（照 _updateStepSummary 先例）：
+            # 页面销毁竞态下静默退出。本页面常驻（MainWindow 创建一次、
+            # showPage 仅 grid_forget），唯一销毁路径是 quit_app 级联，
+            # 且 destroy 里会 after_cancel——这里守卫只是最后一道防线。
+            try:
+                if label.winfo_exists():
+                    label.configure(text="")
+            except Exception:
+                pass
+            # 定时器已执行完毕，清空槽位表示"当前无挂起任务"
+            setattr(self, attr_name, None)
+
+        new_id = self.after(duration_ms, _clear)
+        setattr(self, attr_name, new_id)
+
+    def _formatDropsPreview(self, drops) -> str:
+        """
+        丢弃级问题列表 → 确认弹窗正文。
+        原文截断约 40 字符；超过 8 条只列前 8 条 + 汇总行（定稿拍板）。
+        截断导致的"看不全"是已接受边界：行号已给出，用户可回文本框
+        对照，不值得做滚动详情窗（定稿"不做清单"第 7 条）。
+        """
         lines = []
-        for interpreter, keywords in blacklist_dict.items():
-            if keywords:
-                keywords_str = ", ".join(keywords)
-                lines.append(f"[{interpreter}] {keywords_str}")
-        text = "\n".join(lines)
+        for lineno, reason, raw in drops[:8]:
+            preview = raw if len(raw) <= 40 else raw[:40] + "…"
+            lines.append(f"第 {lineno} 行（{reason}）：{preview}")
+        if len(drops) > 8:
+            lines.append(f"……等共 {len(drops)} 行")
+        return "\n".join(lines)
+
+    # ======================================================================
+
+    def _loadCustomBlacklist(self):
+        """从 Global Settings.json 读取用户自定义黑名单并回显到文本框。
+
+        15 号改造：回显文本改由 formatBlacklistDict 统一生成（旧版是
+        本文件内联的又一份序列化副本）。回显的就是实际存储格式，
+        归一化成果（解释器名 lower、去重）会自然"回写"到用户视野
+        （验收项 B14：保存后重开设置页看到规范化写法）。
+        """
+        blacklist_dict = loadUserBlacklist()
+        text = formatBlacklistDict(blacklist_dict)
         self.customBlacklistTextbox.delete("1.0", "end")
         self.customBlacklistTextbox.insert("1.0", text)
 
     def saveCustomBlacklist(self):
-        """保存按钮的回调：将文本框内容解析为字典格式保存"""
+        """保存按钮的回调（15 号重写：语法检查 + 统一清除机制）。
+
+        流程（定稿第四节）：
+        1. 空文本框 → 显式清空配置（文案明确"已清空"）；
+        2. parseBlacklistText 一次性收集全部问题（单点解析器）；
+        3. 丢弃级 → askyesno 确认（keyValidator 逃生口同款交互，
+           方向相反：那里默认拒、这里默认保）；
+        4. 警告级 → 不拦，状态行提示首条 + "另有 K 条"；
+        5. 状态行时长按"净成功 3s / 其余 10s"两档（定稿拍板）。
+        """
         raw_text = self.customBlacklistTextbox.get("1.0", "end-1c")
-        blacklist_dict = {}
 
-        for line in raw_text.split('\n'):
-            line = line.strip()
-            if not line or line.startswith('#'):  # 跳过空行和注释
-                continue
+        # ── 空文本框：显式清空 ──
+        # 走到这说明用户删光了全部内容，意图就是清空。不弹确认
+        # （清空自定义黑名单无破坏性——强制黑名单仍在兜底），文案
+        # 明确告知即可（验收项 A9）。
+        if not raw_text.strip():
+            try:
+                saveUserBlacklist({})
+            except Exception as e:
+                self._showStatusAndScheduleClear(
+                    self.blacklistSaveStatus, "_blacklistClearAfterId",
+                    f"❌ 保存失败: {e}", "red", _STATUS_CLEAR_LONG_MS)
+                return
+            self._showStatusAndScheduleClear(
+                self.blacklistSaveStatus, "_blacklistClearAfterId",
+                "✅ 已保存（自定义黑名单已清空）", "green",
+                _STATUS_CLEAR_QUICK_MS)
+            return
 
-            match = re.match(r'^\[(.+?)\]\s*(.+)$', line)
-            if match:
-                interpreter = match.group(1).strip()
-                keywords_str = match.group(2).strip()
-                keywords = [kw.strip() for kw in keywords_str.split(',') if kw.strip()]
-                if keywords:
-                    blacklist_dict[interpreter] = keywords
+        # ── 解析 + 问题收集（单点解析器，一次收集全部问题）──
+        blacklist_dict, drops, warns = parseBlacklistText(raw_text)
 
+        # ── 丢弃级：askyesno 确认（逃生口）──
+        if drops:
+            if not blacklist_dict:
+                # 特判（定稿第四节）：所有行都被丢弃 → 保存将清空现有
+                # 配置，文案必须点破，防用户改坏文本误清已有保护。
+                confirm_msg = (
+                        "所有行都无法解析，继续保存将使自定义黑名单清空"
+                        "（现有配置会被清除）。\n\n"
+                        + self._formatDropsPreview(drops)
+                        + "\n\n确定要保存吗？"
+                )
+            else:
+                confirm_msg = (
+                        f"以下 {len(drops)} 行无法解析，保存时将被丢弃：\n\n"
+                        + self._formatDropsPreview(drops)
+                        + "\n\n其余行照常保存。是否继续？"
+                )
+            if not messagebox.askyesno("黑名单格式问题", confirm_msg):
+                self._showStatusAndScheduleClear(
+                    self.blacklistSaveStatus, "_blacklistClearAfterId",
+                    "已取消，未保存", "gray", _STATUS_CLEAR_QUICK_MS)
+                return
+
+        # ── 写入 ──
         try:
             saveUserBlacklist(blacklist_dict)
-            self.blacklistSaveStatus.configure(
-                text=f"✅ 已保存 {len(blacklist_dict)} 个解释器的黑名单", text_color="green"
-            )
         except Exception as e:
-            self.blacklistSaveStatus.configure(text=f"❌ 保存失败: {e}", text_color="red")
+            self._showStatusAndScheduleClear(
+                self.blacklistSaveStatus, "_blacklistClearAfterId",
+                f"❌ 保存失败: {e}", "red", _STATUS_CLEAR_LONG_MS)
+            return
+
+        # ── 状态行拼装（定稿第五节模板，按序用"；"连接）──
+        parts = []
+        if blacklist_dict:
+            parts.append(f"✅ 已保存 {len(blacklist_dict)} 个解释器")
+            if drops:
+                parts.append(f"已跳过 {len(drops)} 行")
+        else:
+            # 空字典 = 清空（用户显式清空 / 全部行被丢弃后确认 /
+            # 只写了注释行——三种路径文案统一）
+            parts.append("✅ 已保存（自定义黑名单已清空）")
+            if drops:
+                parts.append(f"已跳过 {len(drops)} 行")
+        if warns:
+            head = warns[0]
+            extra = f"（另有 {len(warns) - 1} 条警告）" if len(warns) > 1 else ""
+            parts.append(f"⚠ {head}{extra}")
+
+        text = "；".join(parts)
+        has_issue = bool(drops or warns)
+        self._showStatusAndScheduleClear(
+            self.blacklistSaveStatus, "_blacklistClearAfterId",
+            text,
+            "#FFA500" if has_issue else "green",  # 有问题橙色更醒目
+            _STATUS_CLEAR_LONG_MS if has_issue else _STATUS_CLEAR_QUICK_MS)
+
     # ──────────── 原有功能 ────────────
 
     def changeTheme(self, choice):
@@ -541,7 +680,11 @@ class SettingsPage(ctk.CTkFrame):
                 w = int(ui_refs["w_entry"].get())
                 h = int(ui_refs["h_entry"].get())
             except ValueError:
-                self.winSizeSaveStatus.configure(text=f"❌ 保存失败: 宽度和高度必须是整数", text_color="red")
+                # 15 号：接入统一清除机制，失败走 10s 长档
+                self._showStatusAndScheduleClear(
+                    self.winSizeSaveStatus, "_winSizeClearAfterId",
+                    "❌ 保存失败: 宽度和高度必须是整数", "red",
+                    _STATUS_CLEAR_LONG_MS)
                 return
 
             # 强制约束最小值，防止UI崩溃
@@ -559,7 +702,14 @@ class SettingsPage(ctk.CTkFrame):
         # 调用 configManager 保存
         try:
             saveWindowSettings(settings_to_save)
-            self.winSizeSaveStatus.configure(text="✅ 窗口设置已保存！主窗口修改需重启生效。", text_color="green")
+            # 15 号：接入统一清除机制。"需重启"信息有页面静态标签
+            # （"* 主窗口大小修改需重启软件生效"）常驻兜底，3s 清掉
+            # 不丢信息（定稿拍板 A3）。
+            self._showStatusAndScheduleClear(
+                self.winSizeSaveStatus, "_winSizeClearAfterId",
+                "✅ 窗口设置已保存！主窗口修改需重启生效。", "green",
+                _STATUS_CLEAR_QUICK_MS)
         except Exception as e:
-            self.winSizeSaveStatus.configure(text=f"❌ 保存失败: {e}", text_color="red")
-
+            self._showStatusAndScheduleClear(
+                self.winSizeSaveStatus, "_winSizeClearAfterId",
+                f"❌ 保存失败: {e}", "red", _STATUS_CLEAR_LONG_MS)
