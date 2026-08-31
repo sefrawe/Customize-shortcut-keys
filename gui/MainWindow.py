@@ -17,7 +17,6 @@ from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, getShortcutSc
 
 import threading
 
-# print(f"当前快捷键方案数量: {CurrentNumberOfShortcutKeySchemes}")
 # 打开本地全局设置json文件
 with open(globalSettingspath, "r", encoding="utf-8") as f:
     globalSettings = json.load(f)
@@ -25,7 +24,6 @@ with open(globalSettingspath, "r", encoding="utf-8") as f:
 appearanceMode = globalSettings["appearanceMode"]
 
 
-# numberOfNavigationBarSections=4  # 导航栏分为4个部分，分别是首页、功能1、功能2、设置
 
 class MainWindow(ctk.CTk):
     """程序主窗口类，继承自CustomTkinter的CTk主窗口"""
@@ -42,18 +40,8 @@ class MainWindow(ctk.CTk):
         # 写入点仅 quit_app 一处；读取点一律 getattr 防御，不依赖初始化时序。
         self._quitting = False
 
-        # ==================== 34 号修改：is_listening_paused 改为只读 property ==
-        # 原实例属性 self.is_listening_paused = False 一行【必须删除】：
-        #   1) 实例属性会遮蔽类级 property 使其失效；
-        #   2) property 无 setter，若保留这行赋值会直接 AttributeError。
-        # 暂停标志的真相源下沉为 executor.isPaused（见 core/executor.py），
-        # 本类的 is_listening_paused 改为只读 property 委托读取——托盘
-        # （trayIcon.py）与设置页（SettingsPage.py）现有的
-        # getattr(xxx, 'is_listening_paused', False) 读取点零改动、语义不变。
-        # ======================================================================
         # 新增：持有托盘引用
         self.tray_icon = None
-        # ==================== 34 号新增：托盘状态签名轮询状态位 =================
         # _lastStatusSignature：上一次推送时的状态签名（None = 从未推送，
         # 首拍必推送一次，把托盘菜单/图标从"启动时构建的旧快照"纠到当前真值）。
         self._lastStatusSignature = None
@@ -114,24 +102,9 @@ class MainWindow(ctk.CTk):
         self.grid_rowconfigure(0, weight=1)  # 行可伸缩
         # 左侧导航栏（垂直菜单）
         self.nav_frame = ctk.CTkScrollableFrame(self, width=160, fg_color="#303030")  # 定义导航栏框架，设置宽度和背景颜色
-        '''
-        改width的值，导航栏宽度没有变化的原因：
-        你使用的是 grid 布局，在 grid 布局中，CTkFrame 的 width 参数会被忽略，
-        因为 grid 会根据子组件的内容自动计算列宽，而不是根据你设定的 width 值。
-        你的导航栏里只有按钮和 padx=20 的间距，所以实际宽度远小于 400。
-        解决方法： 在 nav_frame 上调用 grid_propagate(False)，阻止子组件反向决定 frame 的尺寸，这样 width=400 才会生效
-        '''
         # 将导航栏放置在左侧，填充整个高度（sticky="ns"表示上下填充），row=0表示第一行，column=0表示第一列。这句代码的作用是将导航栏放置在主窗口的左侧，并且填充整个高度，使其看起来像一个垂直菜单栏。
         self.nav_frame.grid(row=0, column=0, sticky="ns")
         # 导航栏的第 首页加设置加已有两项快捷键方案加1 行（当前index=4）可以伸缩，从而将按钮推到顶部
-
-        """
-        导航栏换成可滚动的了
-        CTkScrollableFrame 本身是一个可滚动的容器，它会根据内部内容的高度自动调整显示区域，并显示滚动条。
-        原来的弹簧行（weight=1）是为了让“+新建”按钮始终在导航栏底部，
-        但换成滚动容器后，这个弹簧会被滚动逻辑覆盖，导致“+新建”按钮的位置可能不再固定在最底部。
-        """
-        # self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
 
         self.grid_columnconfigure(1, weight=1)  # 右侧内容区可伸缩
 
@@ -166,7 +139,6 @@ class MainWindow(ctk.CTk):
         self.pages = {}
         self.pages["首页"] = HomePage(self.contentFrame, fg_color="transparent" )
         # 创建一个首页对象，并存储在self.pages字典中，键为"首页"，值为HomePage对象。第一个参数self.contentFrame表示将页面放置在内容区父容器中，第二个参数fg_color="transparent"表示设置页面背景颜色为透明。
-        # ==================== 32 号新增：注入自身引用 ====================
         # 设置页"软件控制与状态"区需要调用本窗口控制方法并读取
         # is_listening_paused 标志。
         self.pages["设置"] = SettingsPage(self.contentFrame, fg_color="transparent", main_window=self)
@@ -175,7 +147,7 @@ class MainWindow(ctk.CTk):
 
         self.createNavigationBarItemsBasedOnShortcutKeyScheme(getShortcutSchemes(configDirectory))
 
-        # 新增：底部“新建方案”按钮
+        # 底部“新建方案”按钮
         # 放在第6行 (index=5)，因为它上面的 row=4 是 weight=1 的弹簧，所以它会被推到最下面
         self.addProfileBtn = ctk.CTkButton(
             self.nav_frame,
@@ -191,13 +163,11 @@ class MainWindow(ctk.CTk):
         )
         self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
 
-        # 新增：向执行器注入跨线程回调 —— 注意三行必须在同一个守卫块内，
+        # 向执行器注入跨线程回调 —— 注意三行必须在同一个守卫块内，
         # 漏掉任何一个都会造成该通道静默降级（本项目已经踩过一次坑）
         if self.executor:
             self.executor.setConfirmCallback(self.show_confirm_dialog)
             self.executor.setAppControlCallback(self._app_control_callback)
-            # ★ Bug 修复：此前一直缺失的 tip 注入。生效后所有依赖 showTip 的
-            #   错误路径（含新的动作组执行报告）从 print 虚空变为真正可见。
             self.executor.setTipCallback(self.showExecutorTip)
 
         # 500ms after 轮询（见 _pollStatus）。放主窗口而非设置页：页面可能
@@ -222,11 +192,11 @@ class MainWindow(ctk.CTk):
         # 高亮当前选中的导航按钮
         self.navButtons[name].configure(fg_color="#3a3a3a")
 
-        # ★ 新增：如果是方案页面，把缓存里最新的冲突报告喂给它 ★
+        # 如果是方案页面，把缓存里最新的冲突报告喂给它 ★
         if isinstance(self.pages[name], NewShortcutSchemePage):
             report = self.conflict_reports_cache.get(name)
             if report:
-                # 调用页面的渲染方法 (第四步会去 NewShortcutSchemePage 里实现这个方法)
+                # 调用页面的渲染方法
                 self.pages[name].render_conflict_report(report)
 
     def createNewShortcutSchemePage(self, schemeName):
@@ -298,7 +268,7 @@ class MainWindow(ctk.CTk):
             # 存储按钮对象（用于高亮）
             self.navButtons[schemeName] = btn_frame
 
-            # ★ 补上这一行：创建对应的方案页面 ★
+            # 补上这一行：创建对应的方案页面
             self.createNewShortcutSchemePage(schemeName)
 
     def refreshSchemeButtons(self):
@@ -318,12 +288,8 @@ class MainWindow(ctk.CTk):
             if key in self.pages:
                 self.pages[key].destroy()  # 销毁旧页面
                 del self.pages[key]
-        # 3. 重置旧弹簧行权重
-        # self.nav_frame.grid_rowconfigure(oldSpringRow,weight=0)  # grid_rowconfigure方法用于配置网格行的权重。这里将旧弹簧行的权重设置为0，表示该行不会随着窗口大小变化而伸缩，从而避免布局问题。
         # 4. 重新计算
         self.numberOfNavigationBarItems = theNumberOfTargetFilesInTheFolder(configDirectory) + 2
-        # 5. 设置新弹簧行
-        # self.nav_frame.grid_rowconfigure(self.numberOfNavigationBarItems, weight=1)
         # 6. 移动"+ 新建"按钮到新位置
         self.addProfileBtn.grid(row=2, column=0, pady=(10, 20), padx=10, sticky="ew")
         # 7. 重新创建方案按钮和页面
@@ -356,7 +322,6 @@ class MainWindow(ctk.CTk):
         self.showPage("首页")  # 跳转到首页
 
     def refreshExecutor(self):
-        # ==================== 32 号新增：双层守卫的外层 ====================
         # 内层权威防线在 executor.sync() 本体（isExecuting 早退）。本层同步
         # 早退：执行期间连全盘冲突重算也不做，保持"执行期间零全局刷新"的
         # 单一语义；执行结束后下一次任何 UI 触发都会补上（与 sync 静默跳过
@@ -366,7 +331,7 @@ class MainWindow(ctk.CTk):
         # 方案或快捷键变更后，先刷新执行器再决定要不要保持监听
         if self.executor:
             self.executor.sync()
-        # ★ 新增：执行全局冲突状态重算 ★
+        #执行全局冲突状态重算
         self.refresh_all_conflict_status()
 
     def refresh_all_conflict_status(self):
@@ -405,11 +370,10 @@ class MainWindow(ctk.CTk):
         mode = report.get("mode", "关闭")
         has_internal = report.get("has_internal", False)
         has_cross = report.get("has_cross", False)
-        # ==================== 31/33 号新增：保留组合冲突，优先级最高 ==========
+
         # 硬失效事实（保存了也永不触发），与内部冲突同用红色但排最前，
         # 让手改 JSON 的人第一眼看见。
         has_reserved = report.get("has_reserved", False)
-        # ===================================================================
         color = "white"  # 默认白色
         if has_reserved:
             color = "#FF0000"  # 红色：与软件保留停止组合冲突（永不触发）
@@ -464,9 +428,7 @@ class MainWindow(ctk.CTk):
         """ 供子线程调用的软件控制回调。 这是一个“桥梁”方法，接收到子线程的指令后，
         立刻通过 self.after(0, ...) 将实际工作抛回 Tkinter 主线程的事件队列中排队执行，保证线程安全。
         """
-        # ==================== 修改：传递 target_scheme ====================
         self.after(0, lambda: self._handle_app_control(command, target_scheme))
-        # =================================================================
 
     def _handle_app_control(self, command: str, target_scheme: str = ""):
         """
@@ -510,16 +472,12 @@ class MainWindow(ctk.CTk):
 
             # 4. 复用托盘切换方案的方法：互斥修改配置并刷新UI和执行器
             self.switch_scheme_from_tray(target_name)
-
-        # ==================== 设计25修改：支持通过空字符串禁用所有方案 ====================
         elif command == "启用指定方案":
             # 如果 target_scheme 为空字符串，代表用户在下拉框选择了"（无）"，即禁用所有方案
             # switch_scheme_from_tray(None) 会互斥地禁用所有方案
             scheme_to_enable = target_scheme if target_scheme else None
             self.switch_scheme_from_tray(scheme_to_enable)
-        # =====================================================================
 
-    # ==================== 34 号新增：is_listening_paused 只读 property =========
     @property
     def is_listening_paused(self):
         """监听暂停标志（只读）。
@@ -533,9 +491,7 @@ class MainWindow(ctk.CTk):
         if self.executor is None:
             return False
         return bool(getattr(self.executor, 'isPaused', False))
-    # ==========================================================================
 
-    # ==================== 34 号新增：托盘状态签名轮询 ===========================
     def _startStatusPolling(self):
         """启动 500ms 状态轮询（首拍 500ms 后触发）。"""
         self._pollStatusAfterId = self.after(500, self._pollStatus)
@@ -604,8 +560,6 @@ class MainWindow(ctk.CTk):
             self.tray_icon.refresh_visual_state()
         except Exception as e:
             print(f"[托盘] 状态推送失败: {e}")
-    # ==========================================================================
-
 
     def set_tray_icon(self, tray_icon):
         """绑定托盘管理器实例"""
@@ -623,7 +577,6 @@ class MainWindow(ctk.CTk):
 
     def quit_app(self):
         """彻底退出程序的通道"""
-        # ==================== 32 号新增：忙碌守卫（与托盘对齐）============
         # 托盘"退出程序"菜单项 enabled=lambda: not is_busy；本方法层守卫让
         # 设置页按钮与 appControlSafe 的"退出软件"指令获得同款保护：动作组
         # 执行中退出 = 监听器销毁 = 停止组合陪葬，且正劫持鼠标的动作组被腰斩。
@@ -633,7 +586,6 @@ class MainWindow(ctk.CTk):
                 "动作组正在执行中，无法退出软件！\n请先用停止组合 / 托盘 / 设置页停止动作组。",
             )
             return
-        # ==================== 27 号新增：模态编辑窗守卫（弹一次确认）========
         # 背景：编辑快捷键窗 / 动作组编辑窗 / 步骤参数窗 / 延迟窗 / 排序窗
         # 都是 grab_set() 模态窗，里面是尚未写回配置文件的修改。直接退出
         # 会连带销毁它们 = 未保存修改静默丢失。与上面忙碌守卫同构、分级
@@ -659,7 +611,6 @@ class MainWindow(ctk.CTk):
             if not confirm:
                 return  # 用户取消：一切照旧，编辑窗保持原样（仍模态）
 
-        # ==================== 27 号新增：立"退出中"标志 ======================
         # 必须在两条守卫全部通过之后、销毁任何窗口之前立：忙碌守卫拦下时
         # 软件还要继续跑，若提前立标志，此后用户正常关闭编辑窗会跳过
         # executor.start()，监听器被永久卡死。守卫通过 = 退出已成定局。
@@ -677,9 +628,7 @@ class MainWindow(ctk.CTk):
                 grabber.destroy()
             except Exception:
                 pass  # 已销毁等极端场景：以退出流程为重，静默继续
-        # ==================================================================
 
-        # ==================== 34 号新增：停掉托盘状态签名轮询 ==================
         # 回调本体 widget-free、异常全兜底，理论上留着也无害（mainloop 退出
         # 即亡），但显式取消更干净——与 SettingsPage.destroy 的 after_cancel
         # 同款纪律，不依赖防御。
@@ -689,11 +638,7 @@ class MainWindow(ctk.CTk):
             except Exception:
                 pass
             self._pollStatusAfterId = None
-        # ======================================================================
-
-        # ==================================================================
         # 1. 停止执行器和监听器
-        # ……以下原样不动……
 
         if self.executor:
             self.executor.stop()
@@ -739,7 +684,6 @@ class MainWindow(ctk.CTk):
 
     def toggle_listening_status(self):
         """切换全局键盘监听状态（供托盘 / 设置页调用）"""
-        # ==================== 31/32 号新增：忙碌守卫（逃生口保全）==========
         # 动作组执行中暂停监听 = 销毁 listener = 停止组合陪葬，软件失去唯一
         # 的键盘逃生口（此时鼠标已被劫持，托盘和 GUI 都点不到）。与"忙碌
         # 禁暂停"互为因果：守卫在 ⇔ 逃生口在 —— 此逻辑链不可拆除。托盘菜单
@@ -752,10 +696,9 @@ class MainWindow(ctk.CTk):
                 "请先用停止组合或托盘停止动作组。",
             )
             return
-        # ==================================================================
         if self.is_listening_paused:
             # 当前是暂停状态，需要恢复。
-            # 34 号：原 executor.restart() 直调改为 resume() —— isPaused 复位
+            #  executor.restart() 直调改为 resume() —— isPaused 复位
             # 收口进 executor，本方法不再手工维护标志（property 只读，写不了
             # 也不需要写了）；无启用方案时 resume 内部会弹提示。
             if self.executor:
@@ -765,18 +708,16 @@ class MainWindow(ctk.CTk):
             if self.executor:
                 self.executor.pause()
 
-        # ==================== 34 号新增：直推托盘 ==============================
         # 此处标志已翻转（pause/resume 同步改 executor 字段），立即推送一次，
         # 保证"点完立即再展开托盘"显示的就是新状态；兜底的 ≤500ms 轮询拍
         # 会因签名比对相同而跳过，不重复推。Bug#34 的"滞后一拍"由此根治。
         self._pushTrayUpdate()
-        # ======================================================================
 
     def force_stop_action_group(self):
         """供托盘 / 设置页调用的强制停止动作组功能"""
         if self.executor and self.executor.is_busy:
             self.executor.action_group_interrupt_event.set()
-            # 文案修订（31 号）：硬停在最近的检查点（延迟分片/鼠标插值步）
+            # 硬停在最近的检查点（延迟分片/鼠标插值步）
             # 立即响应，"当前步骤完成后"是平滑停止的语义，原句张冠李戴。
             messagebox.showinfo("提示", "已发送强制停止信号，动作组将在最近的检查点立即终止。")
         else:

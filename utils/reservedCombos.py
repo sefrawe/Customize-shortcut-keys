@@ -90,7 +90,6 @@ from utils.keyNormalizer import normalizeAlias
 # =====================================================================
 # 保留组合常量（唯一真相源，禁止抄副本）
 # =====================================================================
-# 35 号修订：确认键 esc → caps_lock（决策记录见模块头）。
 # CONFIRM_KEY 单独立常量：checkReservedConflict 的结构门槛与循环跳过
 # 两处共用，禁止再散写键名字符串（修订前门内就有两处 "esc" 硬编码，
 # 教训在案——真相源内部也要守自己的纪律）。
@@ -219,7 +218,7 @@ def checkReservedConflict(tokens: list) -> tuple:
     normalized = {normalizeAlias(t) for t in tokens}
 
     # ③ 结构门槛：恰好 3 个键，且其中必须有确认键
-    # 35 号修订："esc" 字面量 → CONFIRM_KEY 常量（门内第二处硬编码清偿；
+    # "esc" 字面量 → CONFIRM_KEY 常量（门内第二处硬编码清偿；
     # 门槛数量 3 与键名无关，换键只动键名不动数字）。
     # （不满足 = 结构上不可能等于任何保留集合 → 运行时不会截胡 → 放行）
     if len(normalized) != 3 or CONFIRM_KEY not in normalized:
@@ -232,7 +231,7 @@ def checkReservedConflict(tokens: list) -> tuple:
     ctrl_sides = None
     alt_sides = None
     for t in normalized:
-        # 35 号修订：确认键跳过判断改消费常量（门内第二处硬编码），
+        # 确认键跳过判断改消费常量（门内第二处硬编码），
         # 与上面的门槛共用同一真相，不再各写一份键名字符串。
         if t == CONFIRM_KEY:
             continue

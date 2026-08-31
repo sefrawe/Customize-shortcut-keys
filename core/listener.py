@@ -64,5 +64,4 @@ class KeyboardListener:
         self.pressedKey.removekey(key)
         if self.on_key_release_callback:
             self.on_key_release_callback(key, self.pressedKey)
-        # if key == keyboard.Key.esc:
-        #     self.stop()
+

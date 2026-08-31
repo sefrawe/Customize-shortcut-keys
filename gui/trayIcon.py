@@ -61,7 +61,6 @@ class TrayIconManager:
         # 运行期零计算：灰图只生成这一次，切换仅是引用赋值。
         self.image_gray = self._make_gray_icon(self.image_normal)
         self._last_icon_paused = False  # 幂等基线：初始为彩色
-        # ======================================================================
         # 删除了 self.menu = self._build_menu()，不再需要
         self.icon = pystray.Icon(
             "custom_shortcut",
@@ -70,7 +69,6 @@ class TrayIconManager:
             menu=pystray.Menu(self._build_dynamic_menu)
         )
 
-    # ==================== 34 号新增：菜单构建降级保护外壳 ======================
     def _build_dynamic_menu(self, icon=None):
         """菜单构建总入口：全量 try/except，失败降级为基础菜单。
 
@@ -97,10 +95,8 @@ class TrayIconManager:
         current_enabled = getStartupEnabledShortcutScheme(configDirectory)
         current_name = current_enabled["name"] if current_enabled else None
 
-        # ==================== 获取忙碌状态（原逻辑原样）====================
         is_busy = getattr(self.main_window.executor, 'is_busy', False) if self.main_window.executor else False
 
-        # ==================== 34 号新增：状态行（只读灰显）=====================
         # 文案来自 statusText 单点真相源（与设置页同一函数）；pystray 的
         # MenuItem 没有颜色概念 → 忽略颜色位只取文案；"●" 前缀标记只读
         # 语义（与可点击项区分）。enabled=False 让系统按禁用态灰显。
@@ -112,8 +108,6 @@ class TrayIconManager:
             pystray.MenuItem(f"● 监听: {listen_status_text}", None, enabled=False),
             pystray.MenuItem(f"● 执行: {exec_status_text}", None, enabled=False),
         ]
-        # ======================================================================
-
         # 2. 构建二级菜单项（方案列表）—— 原逻辑原样
         submenu_items = []
         submenu_items.append(
@@ -174,8 +168,6 @@ class TrayIconManager:
             # 忙碌时禁用退出（原逻辑）
             pystray.MenuItem("退出程序", self._on_quit, enabled=lambda item: not is_busy)
         ]
-
-    # ==================== 34 号新增：暂停变灰 ==================================
     def _make_gray_icon(self, img):
         """生成保留 alpha 通道的灰度副本（仅启动时调用一次）。
 
@@ -225,7 +217,6 @@ class TrayIconManager:
             self.icon.update_menu()
         except Exception as e:
             print(f"[托盘] update_menu 失败: {e}")
-    # ==========================================================================
 
     def _on_force_stop_action_group(self, icon=None, item=None):
         """点击强制停止动作组时的回调"""

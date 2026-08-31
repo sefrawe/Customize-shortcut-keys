@@ -24,7 +24,6 @@ class ActionGroupPlayer:
         self.confirm_all = confirm_all
         self.loop_count = int(loop_count)
 
-        # ==================== 新增：超时时间兜底校验 ====================
         try:
             # 尝试转换为整数
             parsed_time = int(max_exec_time)
@@ -34,11 +33,9 @@ class ActionGroupPlayer:
 
         # 强制钳制在 1 到 120 秒之间，防止用户手改 JSON 设置过大导致死机
         self.max_exec_time = max(1, min(parsed_time, 120))
-        # ==============================================================
 
         # 记录开始时间，用于超时判断
         self.start_time = 0
-        # ==================== 新增：错误报告机制（设计定稿 v8）====================
         # 定位说明：
         # 本功能解决"正式执行零反馈"盲区 —— 所有 _log 只进控制台(print)，
         # 打包(pythonw 启动)后控制台不存在，用户对"为什么停了/有没有跳过"完全无知。
@@ -70,7 +67,6 @@ class ActionGroupPlayer:
         # 当前正在执行的轮次（从 1 起），用于让报告能精确定位到
         # "第 N 轮·第 M 步"。play() 每进入一轮循环就覆写一次。
         self.current_loop: int = 0
-        # =======================================================================
 
 
     def _log(self, msg: str):
@@ -85,7 +81,7 @@ class ActionGroupPlayer:
         # 1. 规模限制：超过50步绝对上限，拒绝执行，防止配置错误导致内存爆炸
         if len(self.steps) > 50:
             self._log("❌ 错误：步骤数量超过绝对上限 50 步，拒绝执行！")
-            # ★ 新增：此类拦截原先也走 _log 哑管道，正式执行下用户同样看不见，
+            # 此类拦截原先也走 _log 哑管道，正式执行下用户同样看不见，
             #   与运行期错误同病同理，一并纳入报告体系（决策②：并入同管道）。
             #   区别在于它一条有效步骤都没跑 —— 格式化方法会据此用更短的模板。
             self.error_report.append(
@@ -106,11 +102,11 @@ class ActionGroupPlayer:
 
         # 3. 循环执行逻辑
         for loop_idx in range(self.loop_count):
-            # ★ 新增：记录当前轮次，供后续错误报告中拼接精确定位前缀
+            #  记录当前轮次，供后续错误报告中拼接精确定位前缀
             self.current_loop = loop_idx + 1
             # 每一轮开始前检查中断信号
             if self.hard_interrupt_event.is_set():
-                # ★ 新增：归因判定 —— 事件置位且无超时记录，才认定为用户主动中断。
+                # 归因判定 —— 事件置位且无超时记录，才认定为用户主动中断。
                 #   若 timed_out 为真，这里的 break 其实只是超时截断的余波，
                 #   不能重复归类成人手操作。
                 if not self.timed_out:
@@ -253,15 +249,12 @@ class ActionGroupPlayer:
             return
 
         delay_type = delay_config.get("type", "none")
-        # ==================== 修改：统一按毫秒处理 ====================
         # 无论 fixed 还是 wait_release，拿到的 value 都直接是毫秒
         # 强制转换为 float，解决 IDE 静态类型检查的格式化警告，并防止用户手改 JSON 填错类型导致崩溃
         try:
             value_ms = float(delay_config.get("value", 0))
         except (ValueError, TypeError):
             value_ms = 0.0
-
-        # ============================================================
 
         if delay_type in ("fixed", "wait_release") and value_ms > 0:
             # 如果是等待释放，给个日志提示，方便调试
@@ -271,16 +264,12 @@ class ActionGroupPlayer:
 
             # 分片休眠，每 50ms 醒来检查一次是否被中断
             slept = 0
-            # ==================== 修改：循环条件改为直接对比毫秒 ====================
-            # 以前: while slept < value * 1000:
             while slept < value_ms:
-                # =================================================================
                 if self.hard_interrupt_event.is_set() or self.soft_stop_event.is_set():
                     break
                 time.sleep(0.05)
                 slept += 50
 
-    # ==================== 新增：错误报告私有工具 ====================
     def _recordError(self, category: str, message: str, step_index: int, note: str):
         """往 error_report 里追加一条结构化的异常记录。
 

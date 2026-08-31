@@ -161,13 +161,11 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         )
         self.actionOption.grid(row=0, column=1, sticky="ew", padx=5, pady=5)
 
-        # ==================== 设计26：新增动作提示 hint 框 ====================
         # 放在动作下拉框下方，参数区域上方
         self.hintTextbox = ctk.CTkTextbox(
             self.scrollFrame, font=("微软雅黑", 12), height=120, corner_radius=5, wrap="word"
         )
         # 默认不显示，等 _onActionChanged 触发时根据有无内容再 grid
-        # =============================================================
 
         # 动态参数容器 (原本是 row=4，现在因为插入了 hint，改成 row=5)
         self.paramsFrame = ctk.CTkFrame(self.scrollFrame)
@@ -194,7 +192,6 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             font=("微软雅黑", 14),
         )
         self.getCoordBtn.pack(side="left", padx=5)
-        # ==================== 「⌨ 录入按键」入口 ====================
         # 会话激活标志占位：真正的会话状态（计数/按下集合/成员表）在
         # start_key_capture 里每次进入时逐项重建，这里只立"未激活"标志，
         # 供各处守卫（含 start_coord_capture 的互斥守卫）统一读取
@@ -206,7 +203,7 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             command=self.start_key_capture,
             font=("微软雅黑", 14),
         )
-        # 忙碌置灰（定稿·拍板8）。编辑窗是瞬态窗口，这里只反映"打开那一刻"的
+        # 忙碌置灰。编辑窗是瞬态窗口，这里只反映"打开那一刻"的
         # 状态；绑定 FocusIn 在每次窗口获得焦点时刷新一次，弥补
         # "动作组执行完了、按钮却还灰着"的时差。权威守卫另在点击时把关
         self.bind("<FocusIn>", self._refresh_keycap_btn_state)
@@ -214,7 +211,6 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.keyCaptureBtn.pack(side="left", padx=5)
 
         ctk.CTkButton(self.buttonFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="left", padx=5)
-        # ==================== 【加固】编辑窗销毁时的会话兜底 ====================
         # 漏洞场景：捕获进行中用户点了编辑窗「取消」（或保存/×）→ 本窗口连同
         # 子窗口（捕获窗）一起销毁，但 pynput 监听线程独立于 Tk 存活——
         # 幽灵监听继续收键，executor.start() 永不执行，全局快捷键全灭。
@@ -254,11 +250,9 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             slider.pack(side="left", fill="x", expand=True)
             container._slider = slider
             return container
-        # ==================== 新增：动态方案下拉框 ====================
         elif spec.widget == "dynamic_combobox_schemes":
             from utils.shortcutUtils import getShortcutSchemesNames
             from core.configManager import configDirectory
-            # ==================== 设计25修改：下拉框加上"（无）"选项 ====================
             # 在所有方案名前面加上"（无）"，代表禁用所有方案
             current_schemes = ["（无）"] + getShortcutSchemesNames(configDirectory)
             w = ctk.CTkComboBox(self.paramsFrame, values=current_schemes, font=("微软雅黑", 13))
@@ -268,7 +262,6 @@ class ShortcutEditWindow(ctk.CTkToplevel):
             else:
                 w.set("（无）")  # 如果旧值为空，默认选中"（无）"
             return w
-            # ========================================================
         else:
             # 默认单行输入框
             w = ctk.CTkEntry(self.paramsFrame, font=("微软雅黑", 13), placeholder_text=spec.placeholder)
@@ -364,15 +357,13 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         for widget in self.paramsFrame.winfo_children():
             widget.destroy()
 
-        # ★ 固定 row=5（与常规动作参数区/hint 框的行位规划一致，勿动）
+        # 固定 row=5（与常规动作参数区/hint 框的行位规划一致，勿动）
         self.paramsFrame.grid(row=5, column=0, sticky="nsew", padx=10, pady=5)
 
-        # ==================== 修复布局：确保列权重正确传递 ====================
         # 常规动作分支遗留了 grid_columnconfigure(1, weight=1)，
         # 若不清回来，本容器在 column=0 会无法横向拉满。
         self.paramsFrame.grid_columnconfigure(0, weight=1)
         self.paramsFrame.grid_columnconfigure(1, weight=0)
-        # =====================================================================
 
         # paramsFrame 自身只有这一行内容，纵向拉伸权全部交给它
         self.paramsFrame.grid_rowconfigure(0, weight=1)
@@ -381,13 +372,12 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         contentFrame.grid(row=0, column=0, sticky="nsew", padx=5, pady=5)
         contentFrame.grid_columnconfigure(0, weight=1)
 
-        # ==================== TODO30a：上下结构反转 ====================
         # row=0 编辑按钮区：weight=0 固定高度，常驻顶部不被挤压
         contentFrame.grid_rowconfigure(0, weight=0)
         # row=1 概览文本框：weight=1 吃掉剩余全部高度
         contentFrame.grid_rowconfigure(1, weight=1)
 
-        # 上方：编辑按钮（左对齐，样式与交换前完全一致）
+        # 上方：编辑按钮（左对齐，）
         editBtnFrame = ctk.CTkFrame(contentFrame, fg_color="transparent")
         # sticky="ew" 让容器横向拉满；底部留 5px 与概览区呼吸间隔
         editBtnFrame.grid(row=0, column=0, sticky="ew", pady=(0, 5))
@@ -440,18 +430,14 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.stepSummaryTextbox.tag_config("val_tag", foreground="green")  # 值：绿色
         self.stepSummaryTextbox.tag_config("warn_tag", foreground="#FFA500")  # 警告：橙色
         self.stepSummaryTextbox.tag_config("title_tag", foreground="#4ECDC4")  # 标题：青色
-        # ==================== 新增：分隔线专用颜色 Tag（灰色，弱化视觉）====================
         self.stepSummaryTextbox.tag_config("sep_tag", foreground="#606060")
-        # ============================================================================
-
-        # ==================== 新增：定义缩进常量 ====================
         # L1（一级缩进）：用于全局配置/预估区的键值对，以及步骤序号行
         INDENT_L1 = "    "
         # L2（二级缩进）：用于步骤详情下的备注、按键、次数、延迟、参数等（与步骤名对齐）
         INDENT_L2 = "         "
         # 分隔线（用户指定样式）
         SEPARATOR = "-------------------------------------"
-        # =========================================================
+
 
         # --- 2. 展示全局选项（一级缩进）---
         self.stepSummaryTextbox.insert("end", "【全局配置】\n", "title_tag")
@@ -539,12 +525,9 @@ class ShortcutEditWindow(ctk.CTkToplevel):
                             # 简单处理多行文本，只取第一行展示
                             val_str = str(val).split('\n')[0]
                             self.stepSummaryTextbox.insert("end", f"{val_str}\n", "val_tag")
-
-                # ==================== 新增：每步结束后加分隔线 ====================
                 # 最后一步后面不加，避免末尾出现孤零零的分隔线
                 if i < len(enabled_steps) - 1:
                     self.stepSummaryTextbox.insert("end", f"{INDENT_L1}{SEPARATOR}\n", "sep_tag")
-                # ==============================================================
 
         # --- 5. 末尾汇总禁用步骤 ---
         disabled_count = len(all_steps) - single_count
@@ -561,8 +544,6 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         newName = self.nameEntry.get().strip()
         newKey = self.keyEntry.get().strip()
         newDesc = self.descriptionEntry.get("1.0", "end-1c").strip()
-
-        # ==================== 新增：快捷键格式校验 ====================
         # 统一接收校验结果：是否合法、提示信息、清理后的标准数据
         is_valid, msg, cleaned_key = validate_key_combination(newKey)
         if not is_valid:
@@ -579,8 +560,6 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         else:
             # 校验通过，使用标准化后的数据
             newKey = cleaned_key
-        # ============================================================
-
         # 2. 收集动作数据
         displayName = self.actionOption.get()
         actionDef = getActionDefByDisplayName(displayName)
@@ -608,10 +587,8 @@ class ShortcutEditWindow(ctk.CTkToplevel):
                         val = str(int(widget._slider.get()))
                     else:
                         val = widget.get().strip()
-                    # ==================== 设计25修改：把"（无）"转为空字符串存储 ====================
                     if val == "（无）":
                         val = ""
-                    # =====================================================================
                     if spec and spec.required and spec.widget != "checkbox" and not val:
                         messagebox.showerror("错误", f"参数 '{spec.label}' 不能为空！")
                         return
@@ -628,7 +605,6 @@ class ShortcutEditWindow(ctk.CTkToplevel):
         self.saved = True
         self.destroy()
 
-    # ==================== 坐标获取功能 ====================
     def start_coord_capture(self):
         if not self.executor:
             messagebox.showerror("错误", "未获取到执行器实例，无法暂停全局监听")

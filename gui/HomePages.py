@@ -9,7 +9,6 @@ class HomePage(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        # ── 图片（项目根目录下的 icon.png）───────────────────────
         icon_path = os.path.join(
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             "icon.png",
@@ -22,7 +21,6 @@ class HomePage(ctk.CTkFrame):
                 size=(96, 96),
             )).pack(pady=(30, 10))
 
-        # ── 标题 ────────────────────────────────────────────────
         ctk.CTkLabel(
             self,
             text="自定义快捷键工具",
@@ -36,7 +34,6 @@ class HomePage(ctk.CTkFrame):
             text_color="gray",
         ).pack(pady=(0, 25))
 
-        # ── 功能简介 ────────────────────────────────────────────
         ctk.CTkLabel(
             self,
             text=(
@@ -50,7 +47,6 @@ class HomePage(ctk.CTkFrame):
             font=ctk.CTkFont(size=14),
         ).pack(pady=10)
 
-        # ── 项目地址 ────────────────────────────────────────────
         repo_url = "https://github.com/sefrawe/Customize-shortcut-keys"
         link = ctk.CTkLabel(
             self,

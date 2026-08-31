@@ -2,8 +2,6 @@
 from utils.interpreterRegistry import INTERPRETER_REGISTRY
 from utils.systemUtils import set_auto_start, is_auto_start_enabled
 
-# 顶部 import re 一行【删除】——re 只被旧版 saveCustomBlacklist 使用，
-# 解析已下沉 configManager，留着是死导入（改动 2.6 后无任何使用点）。
 from tkinter import messagebox
 import customtkinter as ctk
 from core.configManager import (
@@ -11,8 +9,8 @@ from core.configManager import (
     saveThemeToConfig,
     loadUserBlacklist,
     saveUserBlacklist,
-    parseBlacklistText,      # 15 号新增：黑名单文本解析器（唯一真相源）
-    formatBlacklistDict,     # 15 号新增：黑名单字典序列化器（回显共用）
+    parseBlacklistText,
+    formatBlacklistDict,
     loadWindowSettings,
     saveWindowSettings,
 )
@@ -20,15 +18,10 @@ from core.configManager import (
 
 # "监听/执行"状态文案的计算分支收敛到 utils/statusText，与托盘状态行
 # 共用同一函数——本文件不再自持分支，任何口径调整只改 statusText 一处
-# （Bug#34 的教训：两处各写一套必然漂移）。
 from utils.statusText import getListenStatus, getExecStatus
 
-# 35 号修订：停止按钮的组合串改为消费 reservedCombos 真相源——
-# 修订前本文件两处按钮硬编码 "ctrl_r+alt_r+esc" 字面串，是全项目
-# 仅存的组合串副本（换键时若忘改必与监听端漂移），本轮一并清偿。
 from utils.reservedCombos import kindToComboStr, STOP_KIND_HARD, STOP_KIND_SOFT
 
-# ==================== 15 号：状态行自动清除时长（两档，定稿拍板）========
 _STATUS_CLEAR_QUICK_MS = 3000   # 净成功：无丢弃、无警告、保存无异常
 _STATUS_CLEAR_LONG_MS = 10000   # 其余：确认跳过 / 有警告 / 保存失败
 
@@ -36,7 +29,6 @@ class SettingsPage(ctk.CTkFrame):
 
     def __init__(self, master, main_window=None, **kwargs):
         super().__init__(master, **kwargs)
-        # ==================== 32 号新增：主窗口引用注入 ====================
         # MainWindow 创建本页时传入自身，供"软件控制与状态"区调用其控制方法
         # （暂停/恢复监听、强制/平滑停止、退出）并读取监听暂停标志。
         # 默认 None 保持向后兼容：未传引用的调用点页面照常渲染，控制区降级
@@ -44,7 +36,6 @@ class SettingsPage(ctk.CTkFrame):
         self.main_window = main_window
         # 轮询定时器 ID 占位（destroy 时取消）
         self._poll_after_id = None
-        # ================================================================
 
         # 15 号：两个状态行的自动清除定时器 ID 占位（destroy 时取消）。
         # 两个定时器完全独立：黑名单保存不动 winSize 提示，反之亦然。
@@ -52,15 +43,13 @@ class SettingsPage(ctk.CTkFrame):
         self._winSizeClearAfterId = None
 
 
-        # ── 页面整体布局：单个滚动容器撑满 ──
+        #页面整体布局：单个滚动容器撑满
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
         self.scrollFrame = ctk.CTkScrollableFrame(self, fg_color="transparent")
         self.scrollFrame.grid(row=0, column=0, sticky="nsew")
 
-        # ==================== 32 号新增：软件控制与状态区 ====================
-        # 设计定稿第三节：设置页最顶部（点进设置第一眼即达）。
         # 定位：观察窗口 + 鼠标可用时的备用控制通道 —— 主通道是键盘停止组合，
         # 备用通道是托盘；鼠标被动作组劫持时本区同样点不到，这是模型边界。
         ctk.CTkLabel(self.scrollFrame, text="软件控制与状态", font=("微软雅黑", 24)).pack(pady=(20, 10))
@@ -117,10 +106,6 @@ class SettingsPage(ctk.CTkFrame):
                                      font=("微软雅黑", 13), fg_color="#A30000",
                                      hover_color="#7A0000", command=self._onQuit)
         self.quitBtn.pack(side="left", padx=5)
-        # ==================================================================
-
-
-        # ==================== 主题设置 ====================
         self.themeLabel = ctk.CTkLabel(self.scrollFrame, text="主题设置", font=("微软雅黑", 24))
         self.themeLabel.pack(pady=20)
 
@@ -135,7 +120,6 @@ class SettingsPage(ctk.CTkFrame):
         self.themeSeg.pack(pady=10, padx=20, fill="x")
         self.changeTheme(current_theme)
 
-        # ==================== 通用设置 ====================
         self.generalLabel = ctk.CTkLabel(self.scrollFrame, text="通用设置", font=("微软雅黑", 24))
         self.generalLabel.pack(pady=(40, 10))
 
@@ -158,7 +142,6 @@ class SettingsPage(ctk.CTkFrame):
         if is_auto_start_enabled():
             self.autoStartSwitch.select()
 
-        # ==================== 窗口大小设置 ====================
         self.windowSizeLabel = ctk.CTkLabel(
             self.scrollFrame, text="窗口大小设置", font=("微软雅黑", 24)
         )
@@ -255,7 +238,6 @@ class SettingsPage(ctk.CTkFrame):
         )
         self.winSizeSaveStatus.pack(pady=(0, 2), padx=20, fill="x")
 
-        # ==================== 黑名单管理 ====================
         self.blacklistLabel = ctk.CTkLabel(
             self.scrollFrame, text="黑名单管理", font=("微软雅黑", 24)
         )
@@ -347,13 +329,11 @@ class SettingsPage(ctk.CTkFrame):
         # 加载已保存的用户黑名单数据到文本框
         self._loadCustomBlacklist()
 
-        # ==================== 32 号新增：启动状态轮询 ====================
         # 每 500ms 轮询（设计定稿：500ms~1s）。轮询而非事件推送：监听暂停
         # 标志/执行状态在托盘、GUI、动作组三个入口都可能变化，轮询天然
         # 覆盖全部通道（如托盘暂停后本区文案自动跟随）。
         self._startControlPolling()
 
-    # ==================== 32 号新增：软件控制与状态区方法 ====================
 
     def _startControlPolling(self):
         """启动控制区状态轮询。"""
@@ -450,7 +430,6 @@ class SettingsPage(ctk.CTkFrame):
                 setattr(self, attr, None)
         super().destroy()
 
-    # =======================================================================
 
 
     def _populateForcedBlacklist(self):
@@ -477,7 +456,6 @@ class SettingsPage(ctk.CTkFrame):
         self.forcedBlacklistTextbox.insert("1.0", text)
         self.forcedBlacklistTextbox.configure(state="disabled")
 
-    # ==================== 15 号新增：状态行统一清除机制 ====================
 
     def _showStatusAndScheduleClear(self, label, attr_name: str,
                                     text: str, color: str, duration_ms: int):
@@ -531,8 +509,6 @@ class SettingsPage(ctk.CTkFrame):
         if len(drops) > 8:
             lines.append(f"……等共 {len(drops)} 行")
         return "\n".join(lines)
-
-    # ======================================================================
 
     def _loadCustomBlacklist(self):
         """从 Global Settings.json 读取用户自定义黑名单并回显到文本框。
@@ -638,7 +614,6 @@ class SettingsPage(ctk.CTkFrame):
             "#FFA500" if has_issue else "green",  # 有问题橙色更醒目
             _STATUS_CLEAR_LONG_MS if has_issue else _STATUS_CLEAR_QUICK_MS)
 
-    # ──────────── 原有功能 ────────────
 
     def changeTheme(self, choice):
         """切换主题并保存配置"""

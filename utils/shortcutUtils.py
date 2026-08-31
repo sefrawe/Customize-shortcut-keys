@@ -14,7 +14,6 @@ proJectrootDirectory = Path(__file__).resolve().parent.parent
 configDirectory = proJectrootDirectory / "config"
 globalSettingspath = configDirectory / "Global Settings.json"
 
-# ==================== 31/33 号新增：保留组合检查导入 ====================
 # 导入方向 shortcutUtils -> reservedCombos -> keyNormalizer -> vkKeyMap，
 # 纯数据纯函数链，不经过 configManager，无循环导入风险（本文件顶部警示的
 # 循环导入只存在于 configManager <-> shortcutUtils 之间）。
@@ -256,8 +255,7 @@ def normalize_key_combination(key_str):
 def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
     """ 核心冲突检测逻辑（纯数据逻辑，不涉及UI）
     返回一个结构化的“冲突报告”字典。
-
-    31/33 号新增字段：
+    新增字段：
         has_reserved / reserved_conflicts —— 保留组合冲突。与检测模式无关的
         硬事实（绑了就会被 executor 路由永久截胡），无条件计算，渲染层据此
         在包括"关闭"在内的所有模式下显示警告。
@@ -300,7 +298,7 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
     internalConflicts = {k: v for k, v in internalConflictsMap.items() if len(v) > 1}
 
     # ==============================
-    # 2.5 保留组合冲突检测（31/33 号新增）
+    # 2.5 保留组合冲突检测
     # ==============================
     # 校验语义 = checkReservedConflict（别名归一 + 统称通配感知），与
     # keyValidator 同源 —— 单点真相源，此处禁止重写第二份匹配逻辑。
@@ -324,13 +322,13 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
     # 3. 跨方案冲突检测（看别人）
     # ==============================
     crossConflicts = []
-    # 【新增】用于前端提醒：当前模式为"当前启用的方案与此方案"时，是否存在其他已启用的方案
+    # 用于前端提醒：当前模式为"当前启用的方案与此方案"时，是否存在其他已启用的方案
     no_other_enabled_scheme = False
 
     # 只有在模式不是"关闭"且不是"仅此方案内"时，才进行跨方案检测
     if detectionMode not in ["关闭", "仅此方案内"]:
 
-        # 【新增】若是"当前启用的方案与此方案"模式，先统计除自己外是否有任何启用方案
+        # 若是"当前启用的方案与此方案"模式，先统计除自己外是否有任何启用方案
         if detectionMode == "当前启用的方案与此方案":
             otherEnabledSchemes = [
                 s for s in allSchemesData
@@ -338,13 +336,6 @@ def analyzeConflicts(targetSchemeName, detectionMode, allSchemesData):
             ]
             no_other_enabled_scheme = len(otherEnabledSchemes) == 0
 
-        # ==================== 顺带修复（本轮发现④）====================
-        # 原代码在此处的外层 "for scheme in allSchemesData:" 循环体内，又嵌套
-        # 了一层完全相同的外循环（内层变量遮蔽外层），导致每对跨方案冲突被
-        # 重复追加 (方案数-1) 次 —— 只有两个方案时恰好只跑一遍所以从未暴露，
-        # 三个及以上方案时报告里同一冲突出现多行。修复：删除外层循环，
-        # 只保留一遍遍历。语义与文件头部架构文档（"看别人"单遍比对）一致。
-        # =============================================================
         for scheme in allSchemesData:
 
             # 不和自己比较

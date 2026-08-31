@@ -3,7 +3,6 @@
 虚拟键码(vk)与规范键名的双向映射
 """
 """
-=====================================================================
 为什么需要这个模块（Bug#30 根因回顾）：
     旧版监听端以 char 为第一优先。而 pynput 在 Windows 下生成 char 时
     会参考"当时按住的修饰键"（内部走 ToUnicode），导致：
@@ -84,33 +83,3 @@ for _vk, _name in VK_TO_NAME.items():
 #   · 非 USB-HID 的扩展键某些键盘驱动会给高 vk (>255)，不在标准域内，
 #     不收录，交由归一化函数返回 None 后被忽略。
 # ---------------------------------------------------------------------
-
-# ============================ 自测代码 ===============================
-# 单独运行本文件即可验证两张表的完整性（python utils/vkKeyMap.py），
-# 与项目其他模块零耦合：
-#   检查项① 名字无重复：同一规范名绝不允许来自两个不同 vk
-#   检查项② 数量正确：10数字 + 26字母 + 10小键盘数 + 5运算 + 11标点 = 62
-#   检查项③ 抽查关键样本：本轮 bug 两主角 '=' '/' 必须在表中且指向正确
-if __name__ == "__main__":
-    # ① 反向去重检查
-
-    #   这里再显式找一遍潜在重复名，正常应输出空列表
-    collisions = []
-    seen: dict[str, int] = {}
-    for vk, nm in VK_TO_NAME.items():
-        if nm in seen:
-            collisions.append((nm, seen[nm], vk))
-        seen[nm] = vk
-    print("重名冲突:", collisions or "无 ✅")
-
-    # ② 数量核对
-    print(f"正向收录 {len(VK_TO_NAME)} 个 vk（应为 62），"
-          f"反向 {len(NAME_TO_VK)} 个（应与正向相等）")
-
-    # ③ 关键样本抽查
-    for probe_vk, expect in [(187, "="), (191, "/"),
-                             (106, "numpad_multiply"), (65, "a"),
-                             (49, "1"), (97, "numpad_1")]:
-        got = VK_TO_NAME.get(probe_vk)
-        mark = "✅" if got == expect else "❌"
-        print(f"{mark} vk={probe_vk} -> {got!r} (期望 {expect!r})")

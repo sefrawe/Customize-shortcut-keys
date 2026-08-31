@@ -20,7 +20,7 @@ handleKeyPress 不再设硬闸（31 号二轮：停止组合路由必须在执�
       才能触发下一次快捷键动作。牺牲了"按住修饰键连击"的灵敏度，
       换取了绝对的执行稳定性。
 '''
-''' 【停止组合三级路由说明（31/33 号新增）】
+'''
  动作组可能劫持鼠标，此时托盘与 GUI 都点不到 → 键盘组合是唯一可靠逃生口。
  handleKeyPress 最顶端（务必在 isExecuting / hasTriggeredCurrentPress 两个
  闸门之前 —— 铁律：放在闸门后，恰在最需要时失效）对归一化后的按下集合做
@@ -100,7 +100,6 @@ class Executor:
         # 供托盘平滑停止动作组使用 (软停止，允许当前步执行完毕后在下一步前退出)
         self.action_group_soft_stop_event = threading.Event()
 
-        # ==================== 31/33 号新增：停止组合路由配套状态 ====================
         # 试运行中断事件槽位：动作组编辑窗试运行开始时 register、try/finally 里
         # unregister。单槽引用赋值在 GIL 下是原子操作，无需加锁；None = 无试运行。
         # 路由二级靠"槽位非 None"判定试运行活跃，注册/注销的生命周期即试运行生命周期。
@@ -112,7 +111,6 @@ class Executor:
         # 要防的边缘场景）。闩锁立着时 finally 跳过复位，交由 handleKeyRelease 的
         # "全部松开"分支一并解除。普通快捷键触发不立此锁，行为与历史版本完全一致。
         self._stopComboLatched = False
-        # ==========================================================================
 
         # 定义一个布尔值，用于表示当前监听器是否正在监听按键事件。如果正在监听，则为 True；否则为 False。
         self.isListening = False
@@ -184,7 +182,6 @@ class Executor:
         self.refresh()
         return self.start()
 
-    # ==================== 34 号新增：暂停 / 恢复（用户意图层）====================
     def pause(self):
         """暂停监听（用户主动操作，经 MainWindow.toggle_listening_status 进入）。
 
@@ -224,7 +221,6 @@ class Executor:
                 "请先在主界面启用一个方案，再恢复监听。"
             )
         return result
-    # ==========================================================================
 
 
     def refresh(self):
@@ -238,7 +234,6 @@ class Executor:
 
     def sync(self):
         """同步执行器状态：有方案就保持监听，没方案就停掉。"""
-        # ==================== 31/32 号新增：执行中守卫（权威防线）====================
         # sync() 会无条件复位 isExecuting / hasTriggeredCurrentPress —— 这在执行中
         # 等于拆掉状态锁，模拟按键将穿透闸门直达匹配逻辑（灵异触发复活）。
         # 入口共三个：托盘菜单（菜单项已按 is_busy 置灰）、MainWindow.refreshExecutor
@@ -249,7 +244,6 @@ class Executor:
         # 忽略（无方案时本就返回 None，调用方已兼容），用户稍后再点一次即可。
         if self.isExecuting:
             return None
-        # ==========================================================================
         self.refresh()
         # 无论监听器是否在运行，都重置状态标志，防止编辑后状态卡死
         self.hasTriggeredCurrentPress = False
@@ -263,7 +257,6 @@ class Executor:
                 self.isListening = False
             return None
         if self.listener is None or not self.isListening:
-            # ==================== 34 号新增：暂停守卫（幽灵监听修复）================
             # 走到这里说明监听器当前不在跑。旧逻辑无条件拉活——但若用户此前
             # 主动暂停（isPaused=True），配置变更触发的本方法就会把监听器悄悄
             # 拉活："暂停"名存实亡，快捷键仍在触发，而托盘/设置页都显示已暂停。
@@ -279,13 +272,11 @@ class Executor:
             self.listener.pressedKey.clearKeys()
         return self.activeScheme
 
-    # ==================== 31 号新增：试运行中断注册/注销接口 ====================
     def register_trial_interrupt(self, event: threading.Event) -> None:
         """注册试运行中断事件（动作组编辑窗试运行开始时调用）。
 
         注册后，全局停止组合的路由二级会把硬停信号送进这里 —— 试运行
-        劫持鼠标时编辑窗按钮同样点不到，键盘组合是试运行的逃生口
-        （31 号顺带项）。单槽位语义：同一时刻至多一个试运行在跑
+        劫持鼠标时编辑窗按钮同样点不到，键盘组合是试运行的逃生口。单槽位语义：同一时刻至多一个试运行在跑
         （编辑窗入口另有 is_busy 守卫，见 ActionGroupEditorWindow 本轮配套接线）。
         """
         self._trial_interrupt_event = event
@@ -298,7 +289,6 @@ class Executor:
         （只是 set 一个无人监听的事件，无害，但不干净、且语义错位）。
         """
         self._trial_interrupt_event = None
-    # ==========================================================================
 
     def getActiveSchemeInfo(self):
         # 获取当前启用的快捷键方案信息
@@ -315,7 +305,6 @@ class Executor:
         }
 
     def handleKeyPress(self, key, pressed_keys):
-        # ==================== 31/33 号新增：归一化提前 + 停止组合三级路由 ==========
         # 归一化从原"闸门之后"提升到最顶端：停止路由与后续用户快捷键匹配共用
         # 同一次归一化结果（一次遍历两用，每个按键事件只算一遍）。
         pressedKeyNames = self._normalizePressedKeys(pressed_keys.getPressedKeys())
@@ -363,7 +352,6 @@ class Executor:
                 elif stop_kind == STOP_KIND_SOFT:
                     self.action_group_soft_stop_event.set()
             elif stop_kind == STOP_KIND_HARD and self.isExecuting:
-                # ==================== 31 二轮新增：单动作硬停（D4 扩展）=========
                 # 单动作执行期 is_busy=False 但 isExecuting=True：大 duration 的
                 # mouseMoveTo 同样劫持鼠标，键盘是唯一逃生口。只接硬停 ——
                 # 软停"做完当前步再停"对单动作无意义（它自己就是最后一步），
@@ -371,7 +359,6 @@ class Executor:
                 # 上方 loose 匹配已在执行期生效（D1 修复），否则残留场景
                 # （触发键未松/虚拟集合残留 + 补按停止组合）精确匹配必漏。
                 self.action_group_interrupt_event.set()
-                # ==============================================================
             elif self._trial_interrupt_event is not None:
                 # 二级：试运行注册活跃 → 置试运行局部事件（编辑窗自建事件，
                 # 播放器每步检查）。放在真执行之后：真执行与试运行理论上
@@ -396,14 +383,6 @@ class Executor:
                 self.hasTriggeredCurrentPress = True
                 self._stopComboLatched = True
             return
-
-        # =========================================================================
-
-        # 【31 号二轮修订 · 死代码清除】原此处还有第二段匹配（isExecuting
-        # 分支调 matchReservedStopComboLoose、否则调精确匹配），其结果
-        # stop_kind 从未被消费 —— 半成品接线，且其上方"直接忽略所有按键
-        # 事件"的注释描述的是已不存在的硬闸门。匹配器分期已上提到上面
-        # 唯一路由点，本段整体删除，不再重复计算。
 
         # 已经触发过一次后，必须等按键集合完全清空，才允许下一次触发
         if self.hasTriggeredCurrentPress:
@@ -430,7 +409,7 @@ class Executor:
         # 只有所有键都松开后，才把"已触发"状态清掉
         if not pressed_keys.getPressedKeys():
             self.hasTriggeredCurrentPress = False
-            # 31 号新增：停止组合闩锁随"全部松开"一并解除 —— 解锁判据与
+            # 停止组合闩锁随"全部松开"一并解除 —— 解锁判据与
             # hasTriggeredCurrentPress 完全同源，不引入第二套时序。
             # 注：执行中（isExecuting=True）释放事件被上面的闸门忽略，闩锁
             # 不会在执行中途被清；执行结束后的首次"全松开"释放事件在此解锁。
@@ -448,8 +427,7 @@ class Executor:
     def _normalizeSingleKey(self, key):
         """【已下沉】实现体平移至 utils.keyNormalizer.normalizeSingleKey（唯一真相源）。
         本方法仅保留为兼容委托：executor 内部调用点（_normalizePressedKeys 等）
-        零感知，无需改动。三级漏斗的完整说明、判定顺序铁律、Bug#30 重构背景、
-        调用方约定，全部随实现体迁移至 utils/keyNormalizer.py，以彼处为准。
+        零感知，无需改动。
         """
         return normalizeSingleKey(key)
 
@@ -542,7 +520,6 @@ class Executor:
             # 每次开始新的动作组前，清理上一次可能残留的软停止信号
             # （软停仍限动作组，清空留在分支内）
             self.action_group_soft_stop_event.clear()
-        # ==================== 31 二轮新增（单动作硬停扩展）：硬停信号无条件清空 ==
         # 原清空在 is_action_group 分支内。硬停事件改为单动作也注入（见下方
         # context 注释）后，清空必须同步覆盖单动作路径 —— 否则上一次被硬停
         # 终止的动作组遗留的 set 信号，会把下一次单动作执行瞬间击杀
@@ -591,7 +568,6 @@ class Executor:
                     "app_control_callback": self.appControlCallback,
                     "tip_callback": self.tipCallback,
                     "shortcut_name": shortcutName,
-                    # ==================== 31 二轮新增（单动作硬停扩展）================
                     # 硬停事件恒传入（不再条件化）：单动作（典型 = 大 duration 的
                     # mouseMoveTo）执行期同样劫持鼠标，托盘/设置页均点不到，其 5ms
                     # 硬停检查点读的正是本事件 —— 原来单动作传 None，检查点短路成
@@ -613,7 +589,6 @@ class Executor:
             # 清空监听器中的按键集合，防止执行期间模拟按键造成的残留状态干扰
             if self.listener is not None:
                 self.listener.pressedKey.clearKeys()
-            # ==================== 31 号新增：闩锁让路 ====================
             # 原逻辑在此无条件复位 hasTriggeredCurrentPress。但若本次执行是被
             # 停止组合终止的（硬停打断长步骤后，用户手指往往仍按着 ctrl_r+alt_r），
             # 此时复位会让随后补按的字母键（配合修饰键 auto-repeat 重新入集合）
@@ -625,4 +600,3 @@ class Executor:
             # 交错序列下可能提前解锁 —— 概率低、后果轻，不值得引入新状态机。
             if not self._stopComboLatched:
                 self.hasTriggeredCurrentPress = False
-            # ============================================================

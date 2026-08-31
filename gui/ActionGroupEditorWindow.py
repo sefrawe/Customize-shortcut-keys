@@ -19,7 +19,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         super().__init__(parent)
         self.title("编辑动作组步骤（此窗口涉及修改配置文件，不允许最小化和对软件进行其他操作）")
 
-        # ==================== 修改：读取全局配置设置窗口大小 ====================
         self.minsize(700, 600)  # 固定最小尺寸，防止UI崩溃
         win_settings = loadWindowSettings().get("actionGroupWindow", {})
         is_maximized = win_settings.get("maximized", False)
@@ -31,7 +30,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         else:
             # 按配置居中显示
             center_window(self, win_width, win_height)
-        # ==============================================================
 
         self.grab_set()  # 模态阻塞
 
@@ -51,7 +49,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self.grid_rowconfigure(1, weight=3)  # 增加权重，让步骤列表区域占据更多空间
         self.grid_rowconfigure(3, weight=1)  # 底部日志保持较小权重
 
-        # === 1. 顶部全局参数区 ===
+        # 1. 顶部全局参数区
         topFrame = ctk.CTkFrame(self, fg_color="transparent")
         topFrame.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         topFrame.grid_columnconfigure((0, 2, 4, 6), weight=1)
@@ -66,10 +64,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self.loopCountEntry.insert(0, str(self._actionGroupData.get("loopCount", "1")))
         self.loopCountEntry.grid(row=0, column=3, sticky="ew", padx=5)
 
-        # ==================== 修复Bug1：超时(秒)输入框不再被覆盖 ====================
-        # 原代码中 "预估执行时间" 的 label 和 value 放在了 column=5 和 column=6，
-        # 与 maxExecEntry(column=5) 和 confirmAllBox(column=6) 发生了 grid 冲突覆盖。
-        # 修复：将 "预估执行时间" 移到独立的 row=1，不再与第一行控件争抢位置。
+
         ctk.CTkLabel(topFrame, text="超时(秒):", font=("微软雅黑", 13)).grid(row=0, column=4, padx=5)
         self.maxExecEntry = ctk.CTkEntry(topFrame, font=("微软雅黑", 13), width=60)
         self.maxExecEntry.insert(0, str(self._actionGroupData.get("maxExecutionTime", "60")))
@@ -89,9 +84,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         )
         self.estimatedTimeLabel.grid(row=1, column=0, columnspan=7, sticky="w", padx=5, pady=(5, 0))
 
-        # =========================================================================
 
-        # === 2. 中部滚动列表区 ===
+        # 2. 中部滚动列表区
         listFrame = ctk.CTkFrame(self, fg_color="transparent")
         listFrame.grid(row=1, column=0, sticky="nsew", padx=10, pady=5)
         listFrame.grid_columnconfigure(0, weight=1)
@@ -111,7 +105,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         )
         # side="right" 在 addStepBtn 之后 pack，最终排在"添加步骤"左侧
         self.reorderBtn.pack(side="right", padx=(0, 5), pady=5)
-        # ==================== 36 号新增：统一设置延迟入口 ====================
         # 批量操作按钮聚在左侧，"+ 添加步骤"保持最右
         self.unifiedDelayBtn = ctk.CTkButton(
             headerFrame, text="⏱ 统一延迟", command=self.openUnifiedDelayEditor, width=110
@@ -122,12 +115,11 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self.scrollFrame.grid(row=1, column=0, sticky="nsew")
         self.scrollFrame.grid_columnconfigure(0, weight=1)
 
-        # === 3. 底部按钮与日志区 ===
+        # 3. 底部按钮与日志区
         bottomFrame = ctk.CTkFrame(self, fg_color="transparent")
         bottomFrame.grid(row=2, column=0, sticky="ew", padx=10, pady=5)
         ctk.CTkButton(bottomFrame, text="取消", fg_color="#A30000", hover_color="#7A0000", command=self.destroy).pack(side="right", padx=5)
         ctk.CTkButton(bottomFrame, text="完成", command=self.onSave).pack(side="right", padx=5)
-        # ==================== 31 号新增：试运行按钮（双态）====================
         # 状态机：▶ 试运行 →（点击启动）→ ⏹ 停止试运行 →（线程结束，after 轮询恢复）
         # 双态共用一个按钮的理由：试运行会劫持鼠标，紧张时刻还要在界面上
         # 找另一个"停止"按钮是反人性的；原地变色变文案 = 视觉锚点不动。
@@ -146,13 +138,11 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         # 按钮两种形态集中定义，防止恢复/激活两处魔法值漂移
         self._trial_btn_idle = {"text": "▶ 试运行", "fg_color": "#2B5797", "hover_color": "#1B3F6B"}
         self._trial_btn_active = {"text": "⏹ 停止试运行", "fg_color": "#A30000", "hover_color": "#7A0000"}
-        # ====================================================================
         ctk.CTkButton(bottomFrame, text="↺ 重置", fg_color="#555555", hover_color="#404040",command=self._onReset).pack(side="left", padx=5)
 
         logLabel = ctk.CTkLabel(self, text="试运行日志:", font=("微软雅黑", 13, "bold"))
         logLabel.grid(row=3, column=0, sticky="sw", padx=15, pady=(10, 0))
 
-        # v7：移除硬编码颜色，跟随主题默认色
         self.logTextbox = ctk.CTkTextbox(self, height=120, font=("微软雅黑", 12), state="disabled")
         self.logTextbox.grid(row=4, column=0, sticky="nsew", padx=10, pady=(0, 10))
 
@@ -167,8 +157,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         applyAppIcon(self)
 
     def destroy(self):
-        """窗口销毁前的兜底：试运行还在跑就先发停止信号（31 号新增）。
-
+        """窗口销毁前的兜底：试运行还在跑就先发停止信号。
         背景：本窗口没有屏蔽右上角关闭按钮（无 WM_DELETE_WINDOW 协议），
         用户完全可能在试运行（正劫持鼠标）中直接关窗。不兜底的话：
         玩家线程变孤儿继续劫持鼠标，且日志回调往已销毁的窗口投递。
@@ -182,21 +171,14 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         super().destroy()
 
 
-    # ==================== 修复Bug3：新增 _getStepRows 方法 ====================
-    # 原代码中多处使用 [w for w in self.scrollFrame.winfo_children() if isinstance(w, ctk.CTkFrame)]
-    # 来获取步骤行，但 _renderSteps 里创建的 stats_frame 和 empty_frame 也是 CTkFrame，
-    # 导致它们被误包含进列表，index 计算偏移，删除/移动步骤时越界报错。
-    #
-    # 修复方案：给每个步骤行打上 _is_step = True 标记，
     # stats_frame 和 empty_frame 标记为 False，
     # 统一通过此方法过滤，确保只返回真正的步骤行。
     def _getStepRows(self):
         """只返回真正的步骤行控件，排除 stats_frame 和 empty_frame"""
         return [w for w in self.scrollFrame.winfo_children() if hasattr(w, "_is_step") and w._is_step]
-    # ======================================================================
 
     def _flushNoteTextboxes(self):
-        """TODO30b 核心：把界面上所有备注框的最新内容刷回 steps_data。
+        """把界面上所有备注框的最新内容刷回 steps_data。
 
         背景：
         备注的唯一真相源曾经是界面控件——用户敲的字只存在于当前行的
@@ -267,10 +249,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
           ② _onReset：语义就是丢弃本次修改， flush 反而会把
              残留文本写进刚恢复的干净快照，让重置在备注项上失效。
         """
-        # ── TODO30b：唯一渲染期回写口 ──────────────────────────────
         if flush_notes:
             self._flushNoteTextboxes()
-        # ───────────────────────────────────────────────────────────
 
         # 1. 清空并重新渲染所有步骤行
         for widget in self.scrollFrame.winfo_children():
@@ -280,10 +260,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         stats_frame = ctk.CTkFrame(self.scrollFrame, fg_color="transparent")
         stats_frame.pack(fill="x", padx=5, pady=(0, 10))
 
-        # ==================== 修复Bug3：标记为非步骤行 ====================
         # 防止 _getStepRows 误将 stats_frame 当作步骤行
         stats_frame._is_step = False
-        # =============================================================
 
         all_steps = self.steps_data
         enabled_steps = [s for s in all_steps if s.get("enabled", True)]
@@ -302,10 +280,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             empty_frame = ctk.CTkFrame(self.scrollFrame, fg_color="transparent", border_width=2, border_color="#555555")
             empty_frame.pack(fill="x", expand=True, pady=50, padx=20)
 
-            # ==================== 修复Bug3：标记为非步骤行 ====================
             # 防止 _getStepRows 误将 empty_frame 当作步骤行
             empty_frame._is_step = False
-            # =============================================================
 
             # 添加图标和更友好的文案
             empty_icon = ctk.CTkLabel(empty_frame, text="📝", font=("Arial", 48))
@@ -330,23 +306,15 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         rowFrame.pack(fill="x", pady=5, padx=5)
         rowFrame.grid_columnconfigure(2, weight=1)  # 让备注列可伸缩
 
-        # ==================== 修复Bug3：标记为步骤行 ====================
         rowFrame._is_step = True
-        # =========================================================
-
-        # ==================== 修复死锁：编辑控件不再随"启用状态"锁定 ====================
-        # 原逻辑：未启用的步骤，下拉框/备注/延迟/参数按钮全部被置为 disabled，
-        # 而新步骤现在默认 enabled=False，导致死循环：
-        #   想启用 → 提示先配置参数 → 参数按钮是灰的点不了 → 永远无法启用
-        # 修复：编辑控件永远保持 normal，"启用"复选框只控制该步骤是否参与执行
+        # 编辑控件永远保持 normal，"启用"复选框只控制该步骤是否参与执行
         is_enabled = step_data.get("enabled", True)
-        # ========================================================================
 
         # 1. 序号
         ctk.CTkLabel(rowFrame, text=str(index + 1), width=30, font=("微软雅黑", 14, "bold")).grid(row=0, column=0,
                                                                                                   padx=5)
 
-        # 2. 动作类型下拉框（不再传 state，永远可编辑）
+        # 2. 动作类型下拉框
         action_menu = ctk.CTkOptionMenu(rowFrame, values=self._getAvailableActions(), font=("微软雅黑", 13), width=150)
         current_action_key = step_data.get("action", "")
         current_action_def = getActionDefByKey(current_action_key)
@@ -358,7 +326,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         action_menu.configure(command=lambda val, rf=rowFrame: self._onStepActionChanged(rf, val))
         action_menu.grid(row=0, column=1, padx=5, pady=5)
 
-        # 3. 备注输入框（永远可编辑）
+        # 3. 备注输入框
         note_text = step_data.get("note", "")
         note_entry = ctk.CTkTextbox(rowFrame, font=("微软雅黑", 13), height=28, border_width=1, corner_radius=4)
         note_entry.insert("1.0", note_text)
@@ -366,14 +334,14 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         note_entry.bind("<KeyRelease>", lambda e, tb=note_entry: self._adjust_note_height(tb))
         self._adjust_note_height(note_entry, init=True)
 
-        # 4. 启用状态复选框（保持不变）
+        # 4. 启用状态复选框
         enabled_check = ctk.CTkCheckBox(rowFrame, text="启用", font=("微软雅黑", 13),
                                         command=lambda rf=rowFrame: self._toggle_step_enabled(rf))
         if is_enabled:
             enabled_check.select()
         enabled_check.grid(row=0, column=3, padx=5)
 
-        # 5. 延迟配置按钮（永远可点击）
+        # 5. 延迟配置按钮
         delay_cfg = step_data.get("delayAfter", {"type": "none", "value": 0})
         delay_type_map = {"none": "无延迟", "fixed": "固定时间", "wait_release": "等待释放"}
         delay_text = delay_type_map.get(delay_cfg.get("type", "none"), "无延迟")
@@ -381,7 +349,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
                                   command=lambda rf=rowFrame: self._openDelayEditor(rf))
         delay_btn.grid(row=0, column=4, padx=5)
 
-        # 6. 参数配置按钮（永远可点击）
+        # 6. 参数配置按钮
         is_param_configured = bool(step_data.get("actionParams"))
         param_text = "⚙ 参数 (已配置)" if is_param_configured else "⚙ 参数 (未配置)"
         param_color = "#4ECDC4" if is_param_configured else "gray"
@@ -390,7 +358,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
                                   command=lambda rf=rowFrame: self._openStepParamEditor(rf))
         param_btn.grid(row=0, column=5, padx=5)
 
-        # 7. 排序与删除按钮组（永远可点击）
+        # 7. 排序与删除按钮组
         btn_frame = ctk.CTkFrame(rowFrame, fg_color="transparent")
         btn_frame.grid(row=0, column=6, padx=5)
         ctk.CTkButton(btn_frame, text="↑", width=30, command=lambda rf=rowFrame: self._moveStep(rf, -1)).pack(
@@ -428,7 +396,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         index = row_frames.index(rowFrame)
         is_enabled = bool(rowFrame._enabled_check.get())
 
-        # 启用前必填参数校验（保持不变）
+        # 启用前必填参数校验
         if is_enabled:
             missing = self._getMissingRequiredParams(self.steps_data[index])
             if missing:
@@ -444,7 +412,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
         self.steps_data[index]["enabled"] = is_enabled
 
-        # TODO30b：原先这里手动同步了单行 note 才敢渲染，现已废弃——
         # 布尔翻转不动列表结构，控件↔数据仍对齐，交由 _renderSteps
         # 默认 flush 统一处理(还能顺带保护其他行的未保存备注)。
         self._renderSteps()
@@ -463,21 +430,16 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         was_enabled = self.steps_data[index].get("enabled", False)
         self.steps_data[index]["enabled"] = False
 
-        # v7：直接刷新按钮状态为"未配置"，不弹窗打断
+        # 直接刷新按钮状态为"未配置"，不弹窗打断
         rowFrame._param_btn.configure(text="⚙ 参数 (未配置)", fg_color="gray")
 
         # 仅当步骤原本启用才需整行重建（同步勾选等视觉状态）；
         # 未启用则不必重渲染，避免打断用户在其他行正在进行的输入。
-        # TODO30b 两处清理：
-        # ① 原"强制禁用后需要重新渲染…"重复注释 ×2 已去重
-        # ② 原来只有 was_enabled 分支里手动补写单行 note，现由
-        #    _renderSteps 默认 flush 全量接管，条件遗漏不再可能。
         if was_enabled:
             self._renderSteps()
 
     def _moveStep(self, rowFrame, direction):
         """上移(-1)或下移(1)"""
-        # ==== TODO30b：必须先于任何数据变更 flush ====
         # 下面马上要对 steps_data 做交换，交换后再 flush 就会错位
         # (A行的备注写进B的数据槽)，所以趁控件↔数据还严格对齐先回写。
         self._flushNoteTextboxes()
@@ -493,7 +455,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
     def _copyStep(self, rowFrame):
         """复制当前行步骤一份，插入到其正下方。(原有规格注释见原文件，此略)"""
-        # ==== TODO30b：insert 会让插入点之后的下标全体偏移 ====
         # 必须趁复制发生前回写；这样刚敲了半截的备注也会被
         # deepcopy 进复制体——符合"所见即所得"，是预期行为。
         self._flushNoteTextboxes()
@@ -511,7 +472,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
     def _deleteStep(self, rowFrame):
         """删除某行"""
-        # ==== TODO30b：del 会缩短数据表，之后 flush 会整体错位 ====
         # 且删除点的 flush 必须发生在删除前，否则该行本身的未保存
         # 备注随手一起消失(用户可能只是想删行，不想连带丢别的行的字)。
         self._flushNoteTextboxes()
@@ -526,7 +486,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         if len(self.steps_data) >= 50:
             messagebox.showwarning("上限提示", "已达到单次 50 步上限，无法继续添加！", parent=self)
             return
-        # ==== TODO30b：append 本身不打乱既有下标，但顺手在此统一 ====
         # 四个结构型操作口径一致：都"先flush→再动数据→关渲染期flush"，
         # 未来维护者不需要逐个记忆哪个安全哪个危险。
         self._flushNoteTextboxes()
@@ -537,9 +496,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
     def _collectUIData(self):
         """保存前收集 UI 上的最新数据"""
-        # ==================== 修复Bug3：使用 _getStepRows 替代 isinstance 过滤 ====================
         row_frames = self._getStepRows()
-        # ==========================================================================
         for i, rf in enumerate(row_frames):
             self.steps_data[i]["note"] = rf._note_entry.get("1.0", "end-1c").strip()
             self.steps_data[i]["enabled"] = bool(rf._enabled_check.get())
@@ -548,7 +505,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         """保存数据并关闭窗口 (加入超时防呆拒绝逻辑，统一毫秒计算)"""
         self._collectUIData()
 
-        # === 超时时间前端校验 (1~120) ===
         max_exec_str = self.maxExecEntry.get().strip() or "60"
         try:
             max_exec_val = int(max_exec_str)
@@ -562,7 +518,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             messagebox.showwarning("提示", "总超时限制必须为整数，已自动为您调整为默认值 60 秒。", parent=self)
             max_exec_str = "60"
 
-        # === v7 核心防呆：预估总延迟时间 > 总超时时间，直接拒绝保存 ===
+        # 预估总延迟时间 > 总超时时间，直接拒绝保存
         loop_count = int(self.loopCountEntry.get().strip() or "1")
         total_delay_ms = 0
         for step in self.steps_data:
@@ -571,11 +527,9 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
                 delay_type = delay_cfg.get("type", "none")
                 delay_val = delay_cfg.get("value", 0)
 
-                # ==================== 修改：统一单位为毫秒 ====================
-                # 不再区分 fixed 和 wait_release，因为底层存储的都已经是毫秒
+                #底层存储的都已经是毫秒
                 if delay_type in ("fixed", "wait_release"):
                     total_delay_ms += delay_val
-                # ============================================================
 
         # 预估总耗时 (秒) = (总延迟毫秒 / 1000) * 循环次数
         estimated_total_sec = (total_delay_ms / 1000) * loop_count
@@ -606,17 +560,13 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
     def _onReset(self):
         """重置：丢弃本次打开窗口以来的所有未保存修改，恢复到打开时的状态"""
-        # （原有的确认弹窗注释保持原样不动）
-        # if not messagebox.askyesno(...): return
-
         # 1. 从快照恢复工作数据（注意重新取 steps 引用，避免指向旧列表）
         self._actionGroupData = copy.deepcopy(self._initialData)
         self.steps_data = self._actionGroupData.get("steps", [])
 
-        # 2. 同步恢复顶部全局配置控件的显示（原代码不变，省略）
+        # 2. 同步恢复顶部全局配置控件的显示
 
         # 3. 重新渲染步骤列表
-        # ==== TODO30b：此处必须 flush_notes=False ====
         # 此刻 self.steps_data 已指向刚恢复的快照副本，屏幕上的旧行
         # 属于"即将销毁的残影"；若默认 flush，会把残影里的文字写进
         # 干净的快照，导致"重置后备注居然还在"的事故。
@@ -666,9 +616,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
         local_interrupt = threading.Event()
 
-        # ==================== 31 号新增：日志首行固定输出 ====================
-        # ① 回声警告（只提示不修）：试运行不改 executor 状态，全局快捷键
-        #    仍在监听，模拟按键可能触发其他快捷键 —— "能用正是试运行的意义"。
+        # ① 回声警告：试运行不改 executor 状态，全局快捷键
+        #    仍在监听，模拟按键可能触发其他快捷键。
         # ② 停止通道教学。注意：试运行只注册了一个中断事件，所以两条全局
         #    停止组合在试运行期间【都等效于强制停止】（软/硬之分只属于
         #    真实动作组）。
@@ -676,10 +625,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         self._updateLog("  停止方式：再点一次本按钮（⏹），或按全局停止组合（试运行中两条组合均等效于强制停止）")
         self._updateLog(" 试运行基于启动瞬间的步骤快照执行，期间的修改不影响本次运行")
 
-        # ====================================================================
 
-        # 试运行上下文：重写 confirm_callback 自动点"是"（原逻辑不动）
-        # ==================== 31 号新增：注入 interrupt_event ====================
         # 激活 mouseMoveTo 平滑移动循环里的硬停检查点（utils/actionHandlers
         # 第一轮已埋，此前试运行没传事件所以不生效）。该事件与注册给
         # executor 的是同一个对象 → 全局停止组合（路由二级）set 的就是它，
@@ -688,20 +634,14 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
             "confirm_callback": lambda msg, holder, evt: (holder.__setitem__(0, True), evt.set()),
             "interrupt_event": local_interrupt,
         }
-        # ========================================================================
-
-        # ==================== 31 号新增：注册到 executor（路由二级）====================
         # 注册后，全局停止组合在"无动作组执行"时会 set 本事件 —— 试运行
         # 劫持鼠标时按钮点不到，键盘组合是逃生口。注销在本窗口线程体的
         # finally（见 _trialThreadBody），窗口销毁也不影响。
         if executor is not None:
             executor.register_trial_interrupt(local_interrupt)
-        # ========================================================================
 
         player = ActionGroupPlayer(
-            copy.deepcopy(self.steps_data),  # ★ 37 号：传启动瞬间的快照而非活引用 ——
-            # 修复"试运行期间增删/移动步骤会错乱正在
-            # 跑的迭代"的现存隐患，顺序同理被隔离
+            copy.deepcopy(self.steps_data),
             self.stopOnErrorOpt.get(),
             context,
             local_interrupt,
@@ -713,7 +653,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
         self._trial_interrupt = local_interrupt
         self._trial_running = True
-        self._setReorderBtnState("disabled")  # 37 号：试运行期间锁定排序入口
+        self._setReorderBtnState("disabled")  # 试运行期间锁定排序入口
 
         self._setTrialButton(self._trial_btn_active)
 
@@ -829,9 +769,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
     def _openStepParamEditor(self, rowFrame):
         """打开当前步骤的参数配置三级弹窗 (移除成功提示)"""
-        # ==================== 修复Bug3：使用 _getStepRows 替代 isinstance 过滤 ====================
         row_frames = self._getStepRows()
-        # ==========================================================================
         index = row_frames.index(rowFrame)
         display_name = rowFrame._action_menu.get()
         action_def = getActionDefByDisplayName(display_name)
@@ -841,7 +779,7 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         current_params = self.steps_data[index].get("actionParams", {})
         editor = StepParamEditorWindow(self, action_def, current_params)
         self.wait_window(editor)
-        # v7：保存后不弹成功提示，直接刷新按钮状态
+        # 保存后不弹成功提示，直接刷新按钮状态
         if editor.result is not None:
             self.steps_data[index]["actionParams"] = editor.result
             # 自动刷新参数按钮为"已配置"状态
@@ -849,9 +787,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
 
     def _openDelayEditor(self, rowFrame):
         """打开延迟配置小窗"""
-        # ==================== 修复Bug3：使用 _getStepRows 替代 isinstance 过滤 ====================
         row_frames = self._getStepRows()
-        # ==========================================================================
+
         index = row_frames.index(rowFrame)
         current_delay = self.steps_data[index].get("delayAfter", {"type": "none", "value": 0})
         editor = DelayEditorWindow(self, current_delay)
@@ -873,14 +810,8 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
                     delay_cfg = step.get("delayAfter", {})
                     delay_type = delay_cfg.get("type", "none")
                     delay_val = delay_cfg.get("value", 0)
-
-                    # ==================== 修改：统一单位为毫秒 ====================
-                    # 以前 wait_release 存的是秒，需要 * 1000 转换
-                    # 现在无论 fixed 还是 wait_release，底层存储的都直接是毫秒，直接相加即可
                     if delay_type in ("fixed", "wait_release"):
                         total_delay_ms += delay_val
-                    # ============================================================
-
             # 将总毫秒数转换为秒，方便用户阅读
             estimated_sec = (total_delay_ms / 1000) * loop_count
             self.estimatedTimeLabel.configure(text=f"预估最少执行时间（总延迟时间）: {estimated_sec:.1f} 秒")
@@ -912,7 +843,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         # 写进新序第 i 槽 —— 备注全部错位。与 _moveStep 的 flush_notes=False 同款理由。
         self._renderSteps(flush_notes=False)
 
-    # ==================== 36 号新增：统一设置延迟 ====================
     def openUnifiedDelayEditor(self):
         """统一设置所有步骤的「完成后延迟」（36 号）。
 
@@ -951,15 +881,6 @@ class ActionGroupEditorWindow(ctk.CTkToplevel):
         delay_text = self._delayTypeToText(new_delay)
         value_text = "" if new_delay.get("type") == "none" \
             else f"（{new_delay.get('value', 0)} 毫秒）"
-
-        # if not messagebox.askyesno(
-        #         "确认统一设置延迟",
-        #         f"将把全部 {len(self.steps_data)} 个步骤（含已禁用）的\n"
-        #         f"「完成后延迟」统一设置为：{delay_text}{value_text}\n\n"
-        #         f"每个步骤原有的延迟设置都会被覆盖，是否继续？",
-        #         parent=self,
-        # ):
-        #     return
 
         for step in self.steps_data:
             step["delayAfter"] = copy.deepcopy(new_delay)
@@ -1001,12 +922,8 @@ class DelayEditorWindow(ctk.CTkToplevel):
 
         ctk.CTkLabel(self, text="间隔类型:", font=("微软雅黑", 13)).grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
-        # ==================== 修改：UI层统一展示为毫秒 ====================
-        # 以前: ["无延迟", "固定时间 (毫秒)", "等待按键释放 (秒)"]
-        # 现在: ["无延迟", "固定时间 (毫秒)", "等待按键释放 (毫秒)"]
         ui_options = ["无延迟", "固定时间 (毫秒)", "等待按键释放 (毫秒)"]
         logic_options = ["none", "fixed", "wait_release"]
-        # =============================================================
 
         current_ui_idx = logic_options.index(self.current_delay.get("type", "none"))
         self.typeOpt = ctk.CTkOptionMenu(self, values=ui_options, font=("微软雅黑", 13))
@@ -1016,12 +933,10 @@ class DelayEditorWindow(ctk.CTkToplevel):
         ctk.CTkLabel(self, text="数值:", font=("微软雅黑", 13)).grid(row=1, column=0, padx=10, pady=10, sticky="w")
         self.valEntry = ctk.CTkEntry(self, font=("微软雅黑", 13))
 
-        # ==================== 修改：默认值兼容旧版秒的单位 ====================
         # 如果是旧版数据且类型为 wait_release，以前存的是秒，这里乘 1000 转换为毫秒展示
         default_val = self.current_delay.get("value", 500)
         if self.current_delay.get("type", "none") == "wait_release" and default_val <= 10:
             default_val = default_val * 1000
-        # =============================================================
 
         self.valEntry.insert(0, str(default_val))
         self.valEntry.grid(row=1, column=1, padx=10, pady=10, sticky="ew")
@@ -1161,7 +1076,7 @@ class StepParamEditorWindow(ctk.CTkToplevel):
         self.destroy()
 
 class ReorderStepsWindow(ctk.CTkToplevel):
-    """步骤排序专用弹窗（37 号，设计定稿 v1 + 使用反馈修订 v2）。
+    """步骤排序专用弹窗。
 
     v2 修订（用户实测反馈四点）：
     1. 序号输入改为【显式提交】模型：Enter /「↻ 刷新」才应用，失焦丢弃草稿。
@@ -1199,7 +1114,7 @@ class ReorderStepsWindow(ctk.CTkToplevel):
         self._initialOrder = copy.deepcopy(steps_snapshot)
         self._workSteps = copy.deepcopy(steps_snapshot)
 
-        # ---- 运行期状态 ----
+        # 运行期状态
         self._rowFrames: list = []      # 当前行框引用（落点判定 / 视觉恢复）
         self._indexEntries: list = []   # 各行序号 Entry 引用（Enter/完成时按行取值）
         self._focusedRowIndex: int = -1  # 当前聚焦序号框所在行（-1 = 无）
@@ -1224,20 +1139,19 @@ class ReorderStepsWindow(ctk.CTkToplevel):
         # destroy 时 unbind_all 不会误伤。
         self.bind_all("<B1-Motion>", self._onGlobalMotion, add="+")
         self.bind_all("<ButtonRelease-1>", self._onGlobalRelease, add="+")
-        # v2：窗口级 Enter —— 焦点在任何控件（含序号 Entry 内部 entry）上按
+        # 窗口级 Enter —— 焦点在任何控件（含序号 Entry 内部 entry）上按
         # Enter 都会冒泡到本窗口的 bindtag。这是序号输入的主提交通道
         self.bind("<Return>", self._onEnterKey)
-        # X 关闭键与「完成」同一条 finalize（设计定稿五.4）
+        # X 关闭键与「完成」同一条 finalize
         self.protocol("WM_DELETE_WINDOW", self._finalize)
         applyAppIcon(self)
 
-    # ────────────────── UI 构建 ──────────────────
 
     def _buildUI(self):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)   # 中部滚动区吃掉全部剩余高度
 
-        # 顶部操作说明（灰色弱化；v2 文案同步显式提交模型）
+        # 顶部操作说明
         ctk.CTkLabel(
             self,
             text="拖动 ☰ 移动（有橙色指示线）；或在序号框输入目标位后按 Enter / 点「刷新」",
@@ -1257,12 +1171,11 @@ class ReorderStepsWindow(ctk.CTkToplevel):
         ctk.CTkButton(btnFrame, text="重置", width=100,
                       fg_color="#555555", hover_color="#404040",
                       command=self._onReset).pack(side="right", padx=5)
-        # v2：刷新按钮。CTkButton takefocus=0，点击不夺焦点 —— 焦点仍留在
+        # 刷新按钮。CTkButton takefocus=0，点击不夺焦点 —— 焦点仍留在
         # 序号框里，所以它和 Enter 行为完全一致（有焦点框就应用其输入）
         ctk.CTkButton(btnFrame, text="↻ 刷新", width=100,
                       command=self._onEnterKey).pack(side="right", padx=5)
 
-    # ────────────────── 行渲染 ──────────────────
 
     def _renderRows(self):
         """按 _workSteps 当前顺序重建全部行。
@@ -1275,7 +1188,7 @@ class ReorderStepsWindow(ctk.CTkToplevel):
         self._noteBoxFocus = False  # 旧行全部销毁，焦点归属随之清零
 
         try:
-            # 1. 记录滚动位置（重渲染后恢复，防大列表跳顶 —— 设计定稿三.5）
+            # 1. 记录滚动位置（重渲染后恢复，防大列表跳顶）
             canvas = self.listScroll._parent_canvas   # 私有 canvas，addStep 已有先例
             try:
                 prev_top = canvas.yview()[0]
@@ -1293,7 +1206,7 @@ class ReorderStepsWindow(ctk.CTkToplevel):
             for i, step in enumerate(self._workSteps):
                 row = ctk.CTkFrame(self.listScroll, height=self.ROW_HEIGHT, corner_radius=5)
                 row.pack(fill="x", pady=2, padx=2)
-                # v2.5：去掉 grid_propagate(False)，行高改由内容决定。
+                #去掉 grid_propagate(False)，行高改由内容决定。
                 # 落点判定与指示线读的是每行实时几何，从不依赖等高，变高行安全
                 row.grid_columnconfigure(3, weight=1)  # 备注列吃掉剩余宽度
 
@@ -1301,12 +1214,10 @@ class ReorderStepsWindow(ctk.CTkToplevel):
 
                 enabled = step.get("enabled", True)
 
-                # v2.3：刚被移动的行在新位置闪烁高亮（用户要求"能看到结果"）
+                #刚被移动的行在新位置闪烁高亮
                 if i == self._lastMovedIndex:
                     row.configure(fg_color=self.FLASH_COLOR)
 
-                # 3.1 序号 Entry：FocusIn 高亮所在行；FocusOut 丢弃草稿恢复
-                #     显示（v2 显式提交模型，应用只走 Enter/刷新/完成）
                 idx_entry = ctk.CTkEntry(row, width=46, justify="center",
                                          font=("微软雅黑", 13))
                 idx_entry.insert(0, str(i + 1))
@@ -1317,12 +1228,12 @@ class ReorderStepsWindow(ctk.CTkToplevel):
                                lambda e, w=idx_entry, idx=i: self._onIndexFocusOut(w, idx))
                 self._indexEntries.append(idx_entry)
 
-                # 3.2 ☰ 拖拽把手：仅此控件响应起拖（整行绑事件会与备注/按钮打架）
+                #  ☰ 拖拽把手：仅此控件响应起拖（整行绑事件会与备注/按钮打架）
                 handle = ctk.CTkLabel(row, text="☰", width=28, font=("微软雅黑", 15))
                 handle.grid(row=0, column=1, padx=2)
                 handle.bind("<Button-1>", lambda e, idx=i: self._onDragStart(idx))
 
-                # 3.3 动作名（定宽；禁用行灰显 + ⛔ 标记）
+                #  动作名（定宽；禁用行灰显 + ⛔ 标记）
                 action_def = getActionDefByKey(step.get("action", ""))
                 name_text = action_def.displayName.split("\n")[0] if action_def else "（无动作）"
                 name_label = ctk.CTkLabel(
@@ -1333,7 +1244,7 @@ class ReorderStepsWindow(ctk.CTkToplevel):
                 if not enabled:
                     name_label.configure(text=name_text + " ⛔")
 
-                # 3.4 备注：多行只读完整展示（v2.5，与父窗备注控件同款风格）
+                #  备注：多行只读完整展示（v2.5，与父窗备注控件同款风格）
                 note_text = str(step.get("note", "")).strip()
                 note_box = ctk.CTkTextbox(
                     row, font=("微软雅黑", 12), height=28, border_width=0,
@@ -1357,7 +1268,7 @@ class ReorderStepsWindow(ctk.CTkToplevel):
             except Exception:
                 pass
 
-            # 5. v2.3：安排闪烁清除（单实例：再次移动会先取消旧任务）
+            # 5. 安排闪烁清除（单实例：再次移动会先取消旧任务）
             if self._lastMovedIndex >= 0:
                 if self._flashJob is not None:
                     try:
@@ -1394,7 +1305,6 @@ class ReorderStepsWindow(ctk.CTkToplevel):
             textbox.configure(height=new_height)
 
 
-    # ────────────────── 核心移动原语 ──────────────────
 
     def _reorder(self, from_index: int, target_index: int) -> bool:
         """核心移动原语（拖拽与改序号共用这一条数据路径 —— 设计定稿四.1）：
@@ -1416,7 +1326,6 @@ class ReorderStepsWindow(ctk.CTkToplevel):
         self._renderRows()
         return True
 
-    # ────────────────── 通道一：改序号（显式提交） ──────────────────
 
     def _onIndexFocusIn(self, row_index: int):
         """序号框获得焦点：所在行持续高亮（v2.2），并记录行号供 Enter 使用。
@@ -1498,7 +1407,6 @@ class ReorderStepsWindow(ctk.CTkToplevel):
                 pass
         self._renderRows()   # 无焦点框：纯刷新对齐
 
-    # ────────────────── 通道二：拖拽 ──────────────────
 
     def _onDragStart(self, index: int):
         """把手按压：进入拖拽会话。
@@ -1633,7 +1541,6 @@ class ReorderStepsWindow(ctk.CTkToplevel):
             return    # 松在列表区域之外 → 视为取消本次拖拽
         self._reorder(self._dragIndex, target_index)
 
-    # ────────────────── 收尾 ──────────────────
 
     def _onReset(self):
         """重置：恢复打开时快照并重渲染自身，不触碰父窗（设计定稿五.3）。

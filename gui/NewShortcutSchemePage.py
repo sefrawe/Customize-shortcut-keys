@@ -80,23 +80,6 @@ from utils.shortcutUtils import getShortcutSchemesNames, getStartupEnabledShortc
     getShortcutSchemeConfigBySchemeName, getShortcutBySchemeName, \
     getShortcutByShortcutId, getshortcut
 
-'''
-原先schemeName 混在 **kwargs 里被传给了 CTkFrame，而 CTkFrame 不认识它。导致启动报错。
-import customtkinter as ctk
-class NewShortcutSchemePage(ctk.CTkFrame):
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
-        # 这里写新建的快捷键方案的所有组件和逻辑
-        ctk.CTkLabel(self, text="这是新建的快捷键方案").pack(pady=20)
-        
-        
-之前宽度定死是因为mainwindow没有给这个页面设置grid_columnconfigure和grid_rowconfigure，没有权限，导致无法伸缩
-# MainWindow.py
-self.contentFrame.grid(row=0, column=1, sticky="nsew", padx=10, pady=10)
-self.contentFrame.grid_columnconfigure(0, weight=1)
-self.contentFrame.grid_rowconfigure(0, weight=1)
-'''
-
 import customtkinter as ctk
 
 
@@ -121,7 +104,6 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         self.grid_columnconfigure(0, weight=1)  # 让标题水平可伸缩
         self.grid_rowconfigure(0, weight=0)  # 让标题垂直不可伸缩
 
-        # self.grid_columnconfigure(1, weight=1)# 让内容区水平可伸缩
         """后一个框架的宽度由第一个框架决定，指定第二个框架的宽度为1，会导致它们均只占页面的一半宽度"""
         self.grid_rowconfigure(1, weight=0)  # 让描述区垂直不可伸缩
 
@@ -129,7 +111,7 @@ class NewShortcutSchemePage(ctk.CTkFrame):
 
         # 第一个框架用于放置标题和启用状态等
         self.headFrame = ctk.CTkFrame(self, height=80, fg_color="transparent")
-        self.headFrame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)  # sticky="ew"表示水平填充，sticky="nsew"表示水平和垂直都填充
+        self.headFrame.grid(row=0, column=0, sticky="ew", padx=10, pady=5)
         # 第二个框架用于放置快捷键方案描述
         self.descFrame = ctk.CTkFrame(self, height=200, fg_color="transparent")
         self.descFrame.grid(row=1, column=0, sticky="ew", padx=10, pady=5)
@@ -607,7 +589,6 @@ class NewShortcutSchemePage(ctk.CTkFrame):
         is_enabled = report.get("startupEnabled", False)
         has_reserved = report.get("has_reserved", False)
 
-        # ══════ 31/33 号新增：保留组合冲突（先于一切模式分支）══════
         # 复用 red_tag（与内部冲突同级严重：都是"保存了也白绑"级别的硬失效），
         # 排最前让手改 JSON 的人第一眼看见。
         if has_reserved:
@@ -615,7 +596,6 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             for item in report.get("reserved_conflicts", []):
                 tb.insert("end", f"   ID {item['id']}  按键 {item['key']}  命中: {item['kinds_text']}\n", "red_tag")
             tb.insert("end", "   停止组合优先级高于所有用户快捷键，请更换这些快捷键的组合。\n\n", "red_tag")
-        # ═══════════════════════════════════════════════════════════
 
         if mode == "关闭":
             # 通过分段按钮判断当前方案是否启用
@@ -770,24 +750,3 @@ class NewShortcutSchemePage(ctk.CTkFrame):
             searchWindow.destroy()
 
         searchWindow.protocol("WM_DELETE_WINDOW", _onClose)
-
-        # shortcut = getShortcutByShortcutId(self.schemeName, shortcutId)
-        # if not shortcut:
-        #     messagebox.showerror("错误", f"未找到快捷键 ID {shortcutId} 的配置。")
-        #     return
-        # editWindow = ShortcutEditWindow(self, shortcut)
-        # editWindow.grab_set()
-        # self.wait_window(editWindow)
-        #
-        # # 窗口关闭后，检查是否点了保存
-        # if editWindow.saved:
-        #     try:
-        #         from core.configManager import saveShortcutEdit
-        #         saveShortcutEdit(self.schemeName, shortcutId, shortcut)
-        #         self.refreshShortcutList()
-        #         self._refreshExecutor()
-        #     except (FileNotFoundError, ValueError) as e:
-        #         messagebox.showerror("错误", f"保存快捷键失败: {e}")
-
-
-

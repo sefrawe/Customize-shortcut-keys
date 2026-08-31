@@ -1,6 +1,5 @@
 ''' 通用数据校验相关工具 '''
 
-# ==================== 31/33 号新增：保留组合检查接线 ====================
 # 校验器是【唯一的拦截面兼教学面】，保留组合检查必须长在这里而不是
 # 调用方各写一份 —— 这样 UI 保存（ShortcutEditWindow.onSave）与
 # 动作组运行时校验（actionHandlers.doSimulateKeys）两个调用方自动
@@ -107,7 +106,6 @@ def validate_key_combination(key_str: str):
                 tips.append("[{}] 未知的按键名称".format(name))
         return False, "按键名校验失败：\n· " + "\n· ".join(tips), cleaned_key
 
-    # ──────────── 31/33 号新增：保留组合检查（防君子层）────────────
     # 走到这里说明格式与键名都合法，再判断它是否恰好是（或在统称/别名
     # 语义下可解析成）软件级停止组合 —— 是则拒绝：停止路由在所有用户
     # 快捷键之前，这类配置即使保存成功也永远不会触发（运行时豁免层
@@ -124,16 +122,8 @@ def validate_key_combination(key_str: str):
     is_reserved, reserved_msg, _matched = checkReservedConflict(parts)
     if is_reserved:
         return False, reserved_msg, cleaned_key
-    # ──────────────────────────────────────────────────────────────
 
     # 拼接回标准格式（此时各段均合法且不含空白，直接 join 即得规范形）
     final_key = "+".join(parts)
     return True, "校验通过", final_key
 
-
-# ==================== 以后扩展的校验函数写在这里 ====================
-# 例如：
-# def validate_path(path_str: str):
-# ...
-# def validate_command(command_str: str):
-# ...

@@ -392,9 +392,6 @@ def changeShortcutSchemeConfig_conflictDetectionMode(schemeName, newMode):
         raise FileNotFoundError(f"找不到方案 '{schemeName}' 的配置文件")
     config["settings"]["conflictDetectionMode"] = newMode
     saveShortcutSchemeConfig(config, schemeName)
-
-# ==================== 15 号：用户黑名单管理（解析单点化改造区）====================
-#
 # 【改造动机】
 # 改造前，"文本 → 字典"的解析逻辑存在两份副本（本文件 loadUserBlacklist
 # 与 gui/SettingsPage.saveCustomBlacklist 各一份），且都患同一个病：
