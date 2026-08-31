@@ -5,12 +5,10 @@ import pystray
 from PIL import Image, ImageOps
 from pathlib import Path
 
-from core.configManager import configDirectory
 from utils.shortcutUtils import getShortcutSchemes, getStartupEnabledShortcutScheme
-# ==================== 34 号新增：状态文案单点真相源 ====================
-# 监听/执行状态行文案与设置页共用同一函数，杜绝两处口径漂移（Bug#34 教训）。
 from utils.statusText import getListenStatus, getExecStatus
-# =====================================================================
+
+from core.configManager import configDirectory, proJectrootDirectory
 
 # ==============================================================================
 # 【系统托盘功能开发核心架构说明】
@@ -238,12 +236,11 @@ class TrayIconManager:
 
     def _load_icon(self):
         """加载图标"""
-        icon_path = Path(__file__).parent.parent / "icon.png"
+        icon_path = proJectrootDirectory / "icon.png"
         if icon_path.exists():
             return Image.open(icon_path)
         else:
-            return Image.new('RGB', (64, 64), color=(73, 109, 137))
-
+            return Image.new('RGB', (64, 64), color=(73, 109, 137))  # 兜底保留，合理
     # --- 跨线程通信桥梁 ---
     def _on_show(self, icon=None, item=None):
         self.main_window.after(0, self.main_window.show_window)

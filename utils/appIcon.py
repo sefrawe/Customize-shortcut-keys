@@ -1,10 +1,8 @@
 ''' 运行时窗口标题栏与任务栏图标工具函数 '''
 import sys
-from pathlib import Path
+from core.configManager import proJectrootDirectory
 
-_ICON_PATH = Path(__file__).resolve().parent.parent / "icon.ico"
-
-
+_ICON_PATH = proJectrootDirectory / "icon.ico"
 def applyAppIcon(window):
     """给任意 CTk/CTkToplevel 窗口设置应用图标（幂等，可重复调用）。
 

@@ -3,16 +3,14 @@ import os
 import webbrowser
 import customtkinter as ctk
 from PIL import Image
-
+from core.configManager import proJectrootDirectory
 
 class HomePage(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
-        icon_path = os.path.join(
-            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-            "icon.png",
-        )
+        icon_path = str(proJectrootDirectory / "icon.png")
+
         if os.path.exists(icon_path):
             pil_image = Image.open(icon_path)
             ctk.CTkLabel(self, text="", image=ctk.CTkImage(
