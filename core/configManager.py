@@ -1,29 +1,22 @@
-'''配置文件和项目路径管理'''
-import sys
+'''配置文件管理'''
 
 import json
 import re
-from pathlib import Path
 from tkinter import messagebox
 
-from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, checkForDuplicateShortcutSchemeNames, \
-    getShortcutSchemesNames, getShortcutSchemeConfigBySchemeName, getShortcutSchemeConfigById
-
-from utils.interpreterRegistry import INTERPRETER_REGISTRY
 # Path(__file__)         → core/config_manager.py
 # .resolve()             → 转为绝对路径
 # .parent                → core/
 # .parent.parent         → 项目根目录
+from core.pathResolver import proJectrootDirectory
+from utils.interpreterRegistry import INTERPRETER_REGISTRY
+from utils.shortcutUtils import theNumberOfTargetFilesInTheFolder, checkForDuplicateShortcutSchemeNames, \
+    getShortcutSchemesNames, getShortcutSchemeConfigBySchemeName, getShortcutSchemeConfigById
 
-if getattr(sys, "frozen", False):
-    # 打包后：exe 所在目录就是项目根（config 与 exe 并排）
-    proJectrootDirectory = Path(sys.executable).resolve().parent
-else:
-    proJectrootDirectory = Path(__file__).resolve().parent.parent
-
-proJectrootDirectory = Path(__file__).resolve().parent.parent
 configDirectory = proJectrootDirectory / "config"
 globalSettingspath = configDirectory / "Global Settings.json"
+configDirectory.mkdir(exist_ok=True)
+
 currentNumberOfShortcutKeySchemes = theNumberOfTargetFilesInTheFolder(configDirectory)
 
 numberOfNavigationBarItems = currentNumberOfShortcutKeySchemes + 2  # 2表示除了快捷键方案之外，还有首页和设置两个固定导航项

@@ -5,14 +5,8 @@ import json
 from pathlib import Path
 
 # from core.configManager import configDirectory 导入此文件会导致循环导入错误，因为 configManager.py 也导入了 shortcutUtils.py。
-# 所以这里重新定义
-# Path(__file__)         → core/config_manager.py
-# .resolve()             → 转为绝对路径
-# .parent                → core/
-# .parent.parent         → 项目根目录
-proJectrootDirectory = Path(__file__).resolve().parent.parent
+from core.pathResolver import proJectrootDirectory
 configDirectory = proJectrootDirectory / "config"
-globalSettingspath = configDirectory / "Global Settings.json"
 
 # 导入方向 shortcutUtils -> reservedCombos -> keyNormalizer -> vkKeyMap，
 # 纯数据纯函数链，不经过 configManager，无循环导入风险（本文件顶部警示的
